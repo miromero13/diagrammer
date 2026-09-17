@@ -12,6 +12,6 @@ import { RolesGuard } from './guards/roles.guard';
   imports: [TypeOrmModule.forFeature([UserEntity]), UsersModule],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, RolesGuard],
-  exports: [AuthService, JwtAuthGuard],
+  exports: [AuthService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

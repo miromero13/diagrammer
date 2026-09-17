@@ -62,46 +62,75 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
-const buildEnterpriseArchitectXmi = (
+const visibility = (value: string) => value.startsWith('+') ? 'public' : value.startsWith('-') ? 'private' : value.startsWith('#') ? 'protected' : 'public'
+const parseAttribute = (value: string) => {
+  const match = value.trim().match(/^([+\-#~]?)([^:]+?)(?:\s*:\s*(.+?))?(?:\s*\[([^\]]+)\])?$/)
+  return { visibility: visibility(match?.[1] ?? ''), name: (match?.[2] ?? value).trim(), type: match?.[3]?.trim(), multiplicity: match?.[4]?.trim() }
+}
+const parseMethod = (value: string) => {
+  const match = value.trim().match(/^([+\-#~]?)([^(:]+)\((.*?)\)(?:\s*:\s*(.+))?$/)
+  return { visibility: visibility(match?.[1] ?? ''), name: (match?.[2] ?? value).trim(), parameters: match?.[3] ?? '', returnType: match?.[4]?.trim() }
+}
+const multiplicityXml = (value: string | undefined, prefix: string) => {
+  const [lower, upper] = (value || '1').split('..')
+  return `<lowerValue xmi:type="uml:LiteralInteger" xmi:id="${prefix}-lower" value="${escapeXml(lower)}"/><upperValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="${prefix}-upper" value="${escapeXml(upper || lower)}"/>`
+}
+
+export const buildEnterpriseArchitectXmi = (
   diagramName: string,
   nodes: Array<FlowNode<DiagramNodeData>>,
   edges: Array<FlowEdge<DiagramEdgeData>>
 ) => {
-  const elements = nodes
-    .map(
-      (node) => `
-    <element xmi.id="${escapeXml(node.id)}" name="${escapeXml(node.data.name)}" type="${node.data.kind === 'interface' ? 'Interface' : 'Class'}" stereotype="${node.data.kind === 'interface' ? 'interface' : node.data.kind === 'abstract' ? 'abstract' : 'class'}">
-      <attributes>${node.data.attributes
-        .map(
-          (attribute, index) => `
-        <attribute xmi.id="${escapeXml(`${node.id}-attr-${index}`)}" name="${escapeXml(attribute)}" />`
-        )
-        .join('')}</attributes>
-      <methods>${node.data.methods
-        .map(
-          (method, index) => `
-        <method xmi.id="${escapeXml(`${node.id}-method-${index}`)}" name="${escapeXml(method)}" />`
-        )
-        .join('')}</methods>
-    </element>`
-    )
-    .join('')
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const classifierReference = (value?: string) => {
+    const candidate = value?.trim() ?? ''
+    const byId = nodesById.get(candidate)
+    if (byId) return byId.id
+    return nodes.find((node) => node.data.name === candidate)?.id
+  }
+  const elements = nodes.map((node) => {
+    const type = node.data.kind === 'interface' ? 'uml:Interface' : 'uml:Class'
+    const attributes = node.data.attributes.map((value, index) => {
+      const item = parseAttribute(value)
+      const type = classifierReference(item.type)
+      return `<ownedAttribute xmi:type="uml:Property" xmi:id="${escapeXml(`${node.id}-attribute-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}"${type ? ` type="${escapeXml(type)}"` : ''}>${item.multiplicity ? multiplicityXml(item.multiplicity, `${node.id}-attribute-${index}`) : ''}</ownedAttribute>`
+    }).join('')
+    const methods = node.data.methods.map((value, index) => {
+      const item = parseMethod(value)
+      const parameters = item.parameters.split(',').map((parameter) => parameter.trim()).filter(Boolean).map((parameter, parameterIndex) => {
+        const parsed = parseAttribute(parameter)
+        const type = classifierReference(parsed.type)
+        return `<ownedParameter xmi:type="uml:Parameter" xmi:id="${escapeXml(`${node.id}-method-${index}-parameter-${parameterIndex}`)}" name="${escapeXml(parsed.name)}"${type ? ` type="${escapeXml(type)}"` : ''}/>`
+      }).join('')
+      const returnType = classifierReference(item.returnType)
+      const result = returnType ? `<ownedParameter xmi:type="uml:Parameter" xmi:id="${escapeXml(`${node.id}-method-${index}-return`)}" name="return" direction="return" type="${escapeXml(returnType)}"/>` : ''
+      return `<ownedOperation xmi:type="uml:Operation" xmi:id="${escapeXml(`${node.id}-method-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}">${parameters}${result}</ownedOperation>`
+    }).join('')
+    const ownedRelationships = edges.filter((edge) => edge.source === node.id && ['inheritance', 'implementation'].includes(edge.data?.relationType ?? '')).map((edge) => {
+      const relationType = edge.data?.relationType
+      return relationType === 'inheritance'
+        ? `<generalization xmi:type="uml:Generalization" xmi:id="${escapeXml(edge.id)}" specific="${escapeXml(edge.source)}" general="${escapeXml(edge.target)}"/>`
+        : `<interfaceRealization xmi:type="uml:InterfaceRealization" xmi:id="${escapeXml(edge.id)}" client="${escapeXml(edge.source)}" supplier="${escapeXml(edge.target)}" contract="${escapeXml(edge.target)}"/>`
+    }).join('')
+    return `<packagedElement xmi:type="${type}" xmi:id="${escapeXml(node.id)}" name="${escapeXml(node.data.name)}" visibility="public"${node.data.kind === 'abstract' ? ' isAbstract="true"' : ''}>${attributes}${methods}${ownedRelationships}</packagedElement>`
+  }).join('')
 
-  const connectors = edges
-    .map(
-      (edge) => `
-    <connector xmi.id="${escapeXml(edge.id)}" type="${escapeXml(edge.data?.relationType ?? 'association')}" source="${escapeXml(edge.source)}" target="${escapeXml(edge.target)}" sourceMultiplicity="${escapeXml(edge.data?.sourceMultiplicity ?? '')}" targetMultiplicity="${escapeXml(edge.data?.targetMultiplicity ?? '')}" />`
-    )
-    .join('')
+  const relationships = edges.map((edge) => {
+    const type = edge.data?.relationType ?? 'association'
+    if (type === 'inheritance' || type === 'implementation') return ''
+    if (type === 'dependency') return `<packagedElement xmi:type="uml:Dependency" xmi:id="${escapeXml(edge.id)}" client="${escapeXml(edge.source)}" supplier="${escapeXml(edge.target)}"/>`
+    const sourceEnd = `${edge.id}-source`
+    const targetEnd = `${edge.id}-target`
+    const aggregation = type === 'composition' ? ' aggregation="composite"' : type === 'aggregation' ? ' aggregation="shared"' : ''
+    return `<packagedElement xmi:type="uml:Association" xmi:id="${escapeXml(edge.id)}"><memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}"${aggregation}>${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}">${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd></packagedElement>`
+  }).join('')
+
+  const shapes = nodes.map((node) => `<ownedElement xmi:type="umldi:UMLClassifierShape" xmi:id="shape-${escapeXml(node.id)}" modelElement="${escapeXml(node.id)}"><bounds xmi:type="dc:Bounds" xmi:id="bounds-${escapeXml(node.id)}" x="${node.position.x}" y="${node.position.y}" width="260" height="${120 + Math.max(node.data.attributes.length, node.data.methods.length) * 20}"/></ownedElement>`).join('')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20131001" xmlns:uml="http://www.omg.org/spec/UML/20131001">
-  <model name="${escapeXml(diagramName)}" type="uml:Model">
-    <packagedElement name="${escapeXml(diagramName)}" type="uml:Package">
-      ${elements}
-      ${connectors}
-    </packagedElement>
-  </model>
+<xmi:XMI xmi:version="2.5.1" xmlns:xmi="http://www.omg.org/spec/XMI/20131001" xmlns:uml="http://www.omg.org/spec/UML/20131001" xmlns:umldi="http://www.omg.org/spec/UML/20131001/UMLDI" xmlns:dc="http://www.omg.org/spec/UML/20131001/UMLDC">
+  <uml:Model xmi:type="uml:Model" xmi:id="model" name="${escapeXml(diagramName)}">${elements}${relationships}</uml:Model>
+  <umldi:Diagram xmi:type="umldi:UMLClassDiagram" xmi:id="diagram" name="${escapeXml(diagramName)}" modelElement="model">${shapes}</umldi:Diagram>
 </xmi:XMI>
 `
 }

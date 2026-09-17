@@ -5,6 +5,7 @@ export interface DiagramContent {
     name?: string
     attributes?: string[]
     methods?: string[]
+    literals?: string[]
     position?: { x: number; y: number }
     size?: { width: number; height: number }
   }>

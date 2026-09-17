@@ -22,9 +22,9 @@ import type { DiagramContent, DiagramDetailsResponse } from './models/diagram.mo
 import { materializeManyToMany } from './many-to-many'
 import { socketManager } from './socketManager'
 
-type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'association' | 'dependency' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
-type UmlKind = 'class' | 'interface' | 'abstract'
-type UmlRelation = Exclude<Tool, 'select' | 'class' | 'interface' | 'abstract'>
+type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'enum' | 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
+type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
+type UmlRelation = Exclude<Tool, 'select' | 'class' | 'interface' | 'abstract' | 'enum'>
 type MultiplicityMode = 'both' | 'target-only' | 'none'
 type UmlRelationConfig = {
   hasMultiplicity: boolean
@@ -36,6 +36,7 @@ interface DiagramNodeData extends Record<string, unknown> {
   kind: UmlKind
   attributes: string[]
   methods: string[]
+  literals: string[]
   onEdit?: (id: string) => void
   themeMode?: 'light' | 'dark'
   remoteSelectedColor?: string
@@ -99,6 +100,7 @@ type CollaborationElementPayload = {
   name?: string
   attributes?: string[]
   methods?: string[]
+  literals?: string[]
   position?: { x: number; y: number }
   size?: { width: number; height: number }
   sourceId?: string
@@ -178,6 +180,7 @@ const cloneDiagramNode = (node: Node<DiagramNodeData>): Node<DiagramNodeData> =>
     ...node.data,
     attributes: [...node.data.attributes],
     methods: [...node.data.methods],
+    literals: [...node.data.literals],
   },
 })
 
@@ -191,11 +194,12 @@ const offsetPoint = (position: { x: number; y: number }, offset = 24) => ({
   y: position.y + offset,
 })
 
-const getNodeHeight = (node: Pick<Node<DiagramNodeData>, 'data'>) => 120 + Math.max(node.data.attributes.length, node.data.methods.length) * 20
+const getNodeHeight = (node: Pick<Node<DiagramNodeData>, 'data'>) => 120 + Math.max(node.data.attributes.length, node.data.methods.length, node.data.literals.length) * 20
 
 const normalizeRelationType = (relationType?: string | null): UmlRelation => {
   if (relationType === 'navigable') return 'dependency'
   if (relationType === 'dependency') return 'dependency'
+  if (relationType === 'enumUsage') return 'enumUsage'
   if (relationType === 'inheritance') return 'inheritance'
   if (relationType === 'implementation') return 'implementation'
   if (relationType === 'composition') return 'composition'
@@ -210,6 +214,7 @@ const UML_RELATION_CONFIG: Record<UmlRelation, UmlRelationConfig> = {
   inheritance: { hasMultiplicity: false },
   implementation: { hasMultiplicity: false },
   dependency: { hasMultiplicity: false },
+  enumUsage: { hasMultiplicity: false },
 }
 
 const relationMultiplicityMode = (relationType: UmlRelation): MultiplicityMode => {
@@ -235,21 +240,36 @@ const isEditableTarget = (target: EventTarget | null) => {
 
 const emptyContent = (): DiagramContent => ({ elements: [], connections: [], metadata: {} })
 
-const kindToType = (kind: UmlKind) => (kind === 'interface' ? 'uml.Interface' : kind === 'abstract' ? 'uml.AbstractClass' : 'uml.Class')
+const kindToType = (kind: UmlKind) => (kind === 'interface' ? 'uml.Interface' : kind === 'abstract' ? 'uml.AbstractClass' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class')
 
 const typeToKind = (type?: string, name?: string): UmlKind => {
   if (String(type) === 'uml.Interface' || String(name ?? '').includes('<<interface>>')) return 'interface'
   if (String(type) === 'uml.AbstractClass' || String(name ?? '').includes('<<abstract>>')) return 'abstract'
+  if (String(type) === 'uml.Enumeration' || String(name ?? '').includes('<<enumeration>>')) return 'enum'
   return 'class'
 }
 
 const prefixName = (kind: UmlKind, name: string) => {
   if (kind === 'interface') return `<<interface>>\n${name}`
   if (kind === 'abstract') return `<<abstract>>\n${name}`
+  if (kind === 'enum') return `<<enumeration>>\n${name}`
   return name
 }
 
-const stripPrefix = (name: string) => name.replace(/^<<interface>>\n|^<<abstract>>\n/, '')
+const stripPrefix = (name: string) => name.replace(/^<<(?:interface|abstract|enumeration)>>\n/, '')
+
+const isEnumElement = (element?: { type?: string; name?: string } | null) => typeToKind(element?.type, element?.name) === 'enum'
+
+const normalizeEnumUsageEndpoints = <T extends { source: string; target: string }>(
+  relationType: UmlRelation,
+  relation: T,
+  elementsById: Map<string, { type?: string; name?: string }>
+) => {
+  if (relationType !== 'enumUsage') return relation
+  const sourceIsEnum = isEnumElement(elementsById.get(relation.source))
+  const targetIsEnum = isEnumElement(elementsById.get(relation.target))
+  return sourceIsEnum && !targetIsEnum ? { ...relation, source: relation.target, target: relation.source } : relation
+}
 
 const toNodes = (content?: DiagramContent | null): Array<Node<DiagramNodeData>> => {
   return (content?.elements ?? []).map((element, index) => {
@@ -263,6 +283,7 @@ const toNodes = (content?: DiagramContent | null): Array<Node<DiagramNodeData>> 
         kind,
         attributes: element.attributes ?? [],
         methods: element.methods ?? [],
+        literals: element.literals ?? [],
       },
     }
   })
@@ -276,10 +297,14 @@ const toEdges = (content?: DiagramContent | null): Array<Edge<DiagramEdgeData>> 
     const associationClassPosition = associationClass?.position
       ? { x: associationClass.position.x, y: associationClass.position.y, width: associationClass.size?.width }
       : undefined
-    return {
-      id: connection.id ?? createId(),
+    const endpoints = normalizeEnumUsageEndpoints(relationType, {
       source: String(connection.sourceId ?? (typeof connection.source === 'string' ? connection.source : connection.source?.id ?? '')),
       target: String(connection.targetId ?? (typeof connection.target === 'string' ? connection.target : connection.target?.id ?? '')),
+    }, elementsById)
+    return {
+      id: connection.id ?? createId(),
+      source: endpoints.source,
+      target: endpoints.target,
       type: 'umlEdge',
       data: {
         relationType,
@@ -300,19 +325,21 @@ const toContent = (nodes: Array<Node<DiagramNodeData>>, edges: Array<Edge<Diagra
     name: prefixName(node.data.kind, node.data.name),
     attributes: node.data.attributes,
     methods: node.data.methods,
+    literals: node.data.literals,
     position: node.position,
-    size: { width: NODE_WIDTH, height: 120 + Math.max(node.data.attributes.length, node.data.methods.length) * 20 },
+    size: { width: NODE_WIDTH, height: getNodeHeight(node) },
   })),
   connections: edges.map((edge) => {
     const relationType = normalizeRelationType(edge.data?.relationType)
     const config = UML_RELATION_CONFIG[relationType]
+    const endpoints = normalizeEnumUsageEndpoints(relationType, { source: edge.source, target: edge.target }, new Map(nodes.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
     return {
       id: edge.id,
       type: relationType,
-      sourceId: edge.source,
-      targetId: edge.target,
-      source: edge.source,
-      target: edge.target,
+      sourceId: endpoints.source,
+      targetId: endpoints.target,
+      source: endpoints.source,
+      target: endpoints.target,
       associationClassId: edge.data?.associationClassId,
       associationClassLink: edge.data?.associationClassLink,
       sourceMultiplicity: config.hasMultiplicity ? (config.sourceFixed ?? edge.data?.sourceMultiplicity ?? '1') : '',
@@ -373,6 +400,7 @@ const DiagramFlow = () => {
   const [editorName, setEditorName] = useState('')
   const [editorAttributes, setEditorAttributes] = useState('')
   const [editorMethods, setEditorMethods] = useState('')
+  const [editorLiterals, setEditorLiterals] = useState('')
   const [editorSourceMultiplicity, setEditorSourceMultiplicity] = useState('1')
   const [editorTargetMultiplicity, setEditorTargetMultiplicity] = useState('1')
   const [editorRelationType, setEditorRelationType] = useState<UmlRelation>('association')
@@ -416,18 +444,19 @@ const DiagramFlow = () => {
   })
   const clipboardRef = useRef<DiagramClipboardItem | null>(null)
 
-  const isRelationTool = (value: Tool) => value === 'association' || value === 'dependency' || value === 'inheritance' || value === 'implementation' || value === 'composition' || value === 'aggregation'
+  const isRelationTool = (value: Tool) => value === 'association' || value === 'dependency' || value === 'enumUsage' || value === 'inheritance' || value === 'implementation' || value === 'composition' || value === 'aggregation'
 
   const buildEdge = useCallback((sourceId: string, targetId: string) => {
     if (!sourceId || !targetId || sourceId === targetId) return null
 
     const relationType = isRelationTool(tool) ? tool : 'association'
+    const endpoints = normalizeEnumUsageEndpoints(relationType, { source: sourceId, target: targetId }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
     const config = UML_RELATION_CONFIG[relationType]
 
     return {
       id: createId(),
-      source: sourceId,
-      target: targetId,
+      source: endpoints.source,
+      target: endpoints.target,
       type: 'umlEdge',
       data: {
         relationType,
@@ -835,6 +864,7 @@ const DiagramFlow = () => {
     setEditorName(node.data.name)
     setEditorAttributes(node.data.attributes.join('\n'))
     setEditorMethods(node.data.methods.join('\n'))
+    setEditorLiterals(node.data.literals.join('\n'))
     setEditorOpen(true)
   }, [nodes])
 
@@ -1069,9 +1099,9 @@ const DiagramFlow = () => {
       const type = String(action?.type || '')
       const data = action?.data ?? {}
 
-      if (type === 'create_class' || type === 'create_interface' || type === 'create_abstract_class') {
+      if (type === 'create_class' || type === 'create_interface' || type === 'create_abstract_class' || type === 'create_enum') {
         const id = String(data.id ?? createId())
-        const kind: UmlKind = type === 'create_interface' ? 'interface' : type === 'create_abstract_class' ? 'abstract' : 'class'
+        const kind: UmlKind = type === 'create_interface' ? 'interface' : type === 'create_abstract_class' ? 'abstract' : type === 'create_enum' ? 'enum' : 'class'
         const nextNode: Node<DiagramNodeData> = {
           id,
           type: 'umlNode',
@@ -1081,6 +1111,7 @@ const DiagramFlow = () => {
             kind,
             attributes: Array.isArray(data.attributes) ? data.attributes : [],
             methods: Array.isArray(data.methods) ? data.methods : [],
+            literals: Array.isArray(data.literals) ? data.literals : [],
             onEdit: openNodeEditor,
             themeMode,
           },
@@ -1101,10 +1132,11 @@ const DiagramFlow = () => {
         if (!source || !target) return
 
         const relationType = normalizeRelationType(data.type ?? data.relationType ?? 'association')
+        const endpoints = normalizeEnumUsageEndpoints(relationType, { source, target }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
         const nextEdge: Edge<DiagramEdgeData> = {
           id,
-          source,
-          target,
+          source: endpoints.source,
+          target: endpoints.target,
           type: 'umlEdge',
           data: {
             relationType,
@@ -1143,6 +1175,7 @@ const DiagramFlow = () => {
               ...node.data,
               ...(typeof data.name === 'string' ? { name: stripPrefix(data.name) } : {}),
               ...(Array.isArray(data.methods) ? { methods: data.methods } : {}),
+              ...(Array.isArray(data.literals) ? { literals: data.literals } : {}),
               attributes: nextAttributes,
               themeMode,
             },
@@ -1187,7 +1220,7 @@ const DiagramFlow = () => {
   const addNode = (kind: UmlKind) => {
     pushHistory()
     const position = reactFlow.screenToFlowPosition({ x: window.innerWidth * 0.45, y: window.innerHeight * 0.25 })
-    const name = kind === 'interface' ? 'NewInterface' : kind === 'abstract' ? 'NewAbstract' : 'NewClass'
+    const name = kind === 'interface' ? 'NewInterface' : kind === 'abstract' ? 'NewAbstract' : kind === 'enum' ? 'NewEnum' : 'NewClass'
     const newNode: Node<DiagramNodeData> = {
       id: createId(),
       type: 'umlNode',
@@ -1195,8 +1228,9 @@ const DiagramFlow = () => {
       data: {
         name,
         kind,
-        attributes: kind === 'interface' ? [] : ['+attribute1: type', '-attribute2: type'],
-        methods: kind === 'interface' ? ['+method1(): returnType', '+method2(param: type): returnType'] : ['+method1(): returnType', '-method2(param: type): returnType'],
+        attributes: kind === 'interface' || kind === 'enum' ? [] : ['+attribute1: type', '-attribute2: type'],
+        methods: kind === 'interface' || kind === 'enum' ? [] : ['+method1(): returnType', '-method2(param: type): returnType'],
+        literals: kind === 'enum' ? ['VALUE_ONE', 'VALUE_TWO'] : [],
         onEdit: openNodeEditor,
       },
     }
@@ -1216,13 +1250,13 @@ const DiagramFlow = () => {
 
   const onReconnect = useCallback((oldEdge: Edge<DiagramEdgeData>, connection: Connection) => {
     pushHistory()
-    const updatedEdge = {
-      ...oldEdge,
+    const relationType = normalizeRelationType(oldEdge.data?.relationType)
+    const endpoints = normalizeEnumUsageEndpoints(relationType, {
       source: connection.source ?? oldEdge.source,
       target: connection.target ?? oldEdge.target,
-      data: oldEdge.data,
-    } as Edge<DiagramEdgeData>
-    setEdges((current) => reconnectEdge(oldEdge, connection, current) as Array<Edge<DiagramEdgeData>>)
+    }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
+    const updatedEdge = { ...oldEdge, ...endpoints, data: oldEdge.data } as Edge<DiagramEdgeData>
+    setEdges((current) => reconnectEdge(oldEdge, { ...connection, source: endpoints.source, target: endpoints.target }, current) as Array<Edge<DiagramEdgeData>>)
     syncCursorToEdge(updatedEdge)
     if (AppConfig.COLLABORATION_ENABLED) socketManager.updateElement(oldEdge.id, serializeEdgeForCollaboration(updatedEdge))
   }, [pushHistory, setEdges])
@@ -1251,6 +1285,7 @@ const DiagramFlow = () => {
         kind,
         attributes: Array.isArray(element.attributes) ? element.attributes : [],
         methods: Array.isArray(element.methods) ? element.methods : [],
+        literals: Array.isArray(element.literals) ? element.literals : [],
       },
     }
 
@@ -1281,6 +1316,10 @@ const DiagramFlow = () => {
         targetMultiplicity: element.targetMultiplicity ?? '1',
       },
     }
+
+    const endpoints = normalizeEnumUsageEndpoints(relationType, { source: nextEdge.source, target: nextEdge.target }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
+    nextEdge.source = endpoints.source
+    nextEdge.target = endpoints.target
 
     if (!nextEdge.source || !nextEdge.target) return
     const nextEdgeData = nextEdge.data ?? {
@@ -1321,6 +1360,7 @@ const DiagramFlow = () => {
           ...(typeof nextChanges?.name === 'string' ? { name: stripPrefix(nextChanges.name) } : {}),
           ...(Array.isArray(nextChanges?.attributes) ? { attributes: nextChanges.attributes } : {}),
           ...(Array.isArray(nextChanges?.methods) ? { methods: nextChanges.methods } : {}),
+          ...(Array.isArray(nextChanges?.literals) ? { literals: nextChanges.literals } : {}),
         },
       }
     }))
@@ -1373,8 +1413,9 @@ const DiagramFlow = () => {
       name: prefixName(node.data.kind, node.data.name),
       attributes: node.data.attributes,
       methods: node.data.methods,
+      literals: node.data.literals,
       position: node.position,
-      size: { width: NODE_WIDTH, height: 120 + Math.max(node.data.attributes.length, node.data.methods.length) * 20 },
+      size: { width: NODE_WIDTH, height: getNodeHeight(node) },
     })
   }
 
@@ -1456,8 +1497,9 @@ const DiagramFlow = () => {
           data: {
             ...node.data,
             name,
-            attributes: kind === 'interface' ? [] : editorAttributes.split('\n').map((line) => line.trim()).filter(Boolean),
-            methods: editorMethods.split('\n').map((line) => line.trim()).filter(Boolean),
+             attributes: kind === 'interface' || kind === 'enum' ? [] : editorAttributes.split('\n').map((line) => line.trim()).filter(Boolean),
+             methods: kind === 'enum' ? [] : editorMethods.split('\n').map((line) => line.trim()).filter(Boolean),
+             literals: kind === 'enum' ? editorLiterals.split('\n').map((line) => line.trim()).filter(Boolean) : [],
           },
         }
         return updatedNode
@@ -1855,7 +1897,8 @@ const DiagramFlow = () => {
               if (
                 tool !== 'class' &&
                 tool !== 'interface' &&
-                tool !== 'abstract'
+                tool !== 'abstract' &&
+                tool !== 'enum'
               )
                 return
               const position = reactFlow.screenToFlowPosition({
@@ -1867,13 +1910,17 @@ const DiagramFlow = () => {
                   ? 'class'
                   : tool === 'interface'
                     ? 'interface'
-                    : 'abstract'
+                    : tool === 'abstract'
+                      ? 'abstract'
+                      : 'enum'
               const name =
                 kind === 'interface'
                   ? 'NewInterface'
                   : kind === 'abstract'
                     ? 'NewAbstract'
-                    : 'NewClass'
+                    : kind === 'enum'
+                      ? 'NewEnum'
+                      : 'NewClass'
               const newNode: Node<DiagramNodeData> = {
                 id: createId(),
                 type: 'umlNode',
@@ -1882,19 +1929,17 @@ const DiagramFlow = () => {
                   name,
                   kind,
                   attributes:
-                    kind === 'interface'
+                    kind === 'interface' || kind === 'enum'
                       ? []
                       : ['+attribute1: type', '-attribute2: type'],
                   methods:
-                    kind === 'interface'
-                      ? [
-                          '+method1(): returnType',
-                          '+method2(param: type): returnType'
-                        ]
+                    kind === 'interface' || kind === 'enum'
+                      ? []
                       : [
                           '+method1(): returnType',
                           '-method2(param: type): returnType'
                         ],
+                  literals: kind === 'enum' ? ['VALUE_ONE', 'VALUE_TWO'] : [],
                   onEdit: openNodeEditor
                 }
               }
@@ -1913,9 +1958,11 @@ const DiagramFlow = () => {
         open={editorOpen}
         mode={editorMode}
         relationConfig={editorRelationConfig}
-        nodeHasAttributes={editorNode?.data.kind !== 'interface'}
+        nodeHasAttributes={editorNode?.data.kind !== 'interface' && editorNode?.data.kind !== 'enum'}
+        nodeIsEnum={editorNode?.data.kind === 'enum'}
         name={editorName}
         attributes={editorAttributes}
+        literals={editorLiterals}
         methods={editorMethods}
         sourceMultiplicity={editorSourceMultiplicity}
         targetMultiplicity={editorTargetMultiplicity}
@@ -1928,6 +1975,7 @@ const DiagramFlow = () => {
         }}
         onNameChange={setEditorName}
         onAttributesChange={setEditorAttributes}
+        onLiteralsChange={setEditorLiterals}
         onMethodsChange={setEditorMethods}
         onSourceMultiplicityChange={setEditorSourceMultiplicity}
         onTargetMultiplicityChange={setEditorTargetMultiplicity}

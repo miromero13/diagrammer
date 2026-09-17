@@ -3,8 +3,8 @@ import { Layers, Link2, Plus, Shapes, Workflow } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 
-type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'association' | 'dependency' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
-type UmlKind = 'class' | 'interface' | 'abstract'
+type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'enum' | 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
+type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
 
 interface DiagramElementsSidebarProps {
   diagramName?: string | null
@@ -14,9 +14,10 @@ interface DiagramElementsSidebarProps {
   onToolChange: (tool: Tool) => void
 }
 
-const RELATION_LABELS: Record<Exclude<Tool, 'select' | 'class' | 'interface' | 'abstract'>, string> = {
+const RELATION_LABELS: Record<Exclude<Tool, 'select' | 'class' | 'interface' | 'abstract' | 'enum'>, string> = {
   association: 'Asociación',
   dependency: 'Dependencia',
+  enumUsage: 'Uso de enum',
   inheritance: 'Herencia',
   implementation: 'Implementación',
   composition: 'Composición',
@@ -47,7 +48,7 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               <Shapes className="h-4 w-4 text-muted-foreground" />
               Elementos
             </h3>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <Button
                 size="sm"
                 variant={tool === 'class' ? 'default' : 'outline'}
@@ -59,6 +60,18 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Clase
+              </Button>
+              <Button
+                size="sm"
+                variant={tool === 'enum' ? 'default' : 'outline'}
+                className="w-full justify-start"
+                onClick={() => {
+                  onToolChange('enum')
+                  onAddNode('enum')
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Enum
               </Button>
               <Button
                 size="sm"
@@ -92,8 +105,8 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               <Link2 className="h-4 w-4 text-muted-foreground" />
               Relaciones
             </h3>
-            <div className="grid grid-cols-1 gap-4">
-              {(['association', 'dependency', 'inheritance', 'implementation', 'composition', 'aggregation'] as const).map((relation) => (
+            <div className="grid grid-cols-1 gap-2">
+              {(['association', 'dependency', 'enumUsage', 'inheritance', 'implementation', 'composition', 'aggregation'] as const).map((relation) => (
                 <Button
                   key={relation}
                   size="sm"

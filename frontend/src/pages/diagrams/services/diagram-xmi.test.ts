@@ -32,6 +32,36 @@ describe('parseDiagramXmi', () => {
     expect(content.connections).toHaveLength(6)
   })
 
+  it('imports and exports enum literals and enum references', () => {
+    const nodes = [
+      { id: 'status', position: { x: 0, y: 0 }, data: { name: 'Status', kind: 'enum' as const, attributes: [], methods: [], literals: ['ACTIVE', 'DISABLED'] } },
+      { id: 'user', position: { x: 300, y: 0 }, data: { name: 'User', kind: 'class' as const, attributes: ['-status: Status'], methods: ['+setStatus(value: Status): Status'], literals: [] } },
+    ]
+    const exported = buildEnterpriseArchitectXmi('enums', nodes, [])
+    expect(exported).toContain('uml:Enumeration')
+    expect(exported).toContain('uml:EnumerationLiteral')
+    expect(exported).toContain('name="ACTIVE"')
+    const content = parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>'))
+
+    expect(content.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'status', type: 'uml.Enumeration', literals: ['ACTIVE', 'DISABLED'] }),
+      expect.objectContaining({ id: 'user', attributes: ['-status: Status'], methods: ['+setStatus(value: Status): Status'] }),
+    ]))
+  })
+
+  it('round-trips dedicated enum usage as a marked UML dependency', () => {
+    const nodes = [
+      { id: 'status', position: { x: 0, y: 0 }, data: { name: 'Status', kind: 'enum' as const, attributes: [], methods: [], literals: ['ACTIVE'] } },
+      { id: 'user', position: { x: 300, y: 0 }, data: { name: 'User', kind: 'class' as const, attributes: [], methods: [], literals: [] } },
+    ]
+    const exported = buildEnterpriseArchitectXmi('enum-use', nodes, [{ id: 'uses-status', source: 'status', target: 'user', data: { relationType: 'enumUsage' as const, sourceMultiplicity: '1', targetMultiplicity: '1' } }])
+    expect(exported).toContain('xmi:type="uml:Dependency"')
+    expect(exported).toContain('stereotype="enum"')
+    const content = parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>'))
+
+    expect(content.connections).toEqual([expect.objectContaining({ id: 'uses-status', type: 'enumUsage', sourceId: 'user', targetId: 'status' })])
+  })
+
   it('imports the supplied test1.xmi fixture without diagram artifacts', () => {
     const fixture = readFileSync(resolve(process.cwd(), '../test1.xmi'), 'utf8')
     // happy-dom does not close XML self-closing tags correctly; preserve the real fixture content for its XML parser.
@@ -39,6 +69,9 @@ describe('parseDiagramXmi', () => {
     const content = parseDiagramXmi(xml)
 
     expect(content.elements).toHaveLength(20)
+    expect(content.elements?.filter((element) => element.type === 'uml.Enumeration')).toHaveLength(6)
+    expect(content.elements?.find((element) => element.name === 'MembershipStatus')?.literals).toEqual(['ACTIVE', 'CACELLED', 'EXPIRED'])
+    expect(content.elements?.find((element) => element.name === 'Payment')?.attributes).toContain('-status: MembershipStatus [1]')
     expect(content.connections).toHaveLength(11)
     expect(content.connections).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'inheritance' }),

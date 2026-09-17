@@ -1,6 +1,6 @@
 import type { DiagramContent } from '../models/diagram.model'
 
-const stripPrefix = (value: string) => value.replace(/^<<interface>>\n|^<<abstract>>\n/, '')
+const stripPrefix = (value: string) => value.replace(/^<<(?:interface|abstract|enumeration)>>\n/, '')
 const local = (element: Element) => (element.localName || element.tagName.split(':').pop() || '').toLowerCase()
 const children = (element: Element, name: string) => Array.from(element.children).filter((child) => local(child) === name.toLowerCase())
 const descendants = (root: ParentNode, name: string) => Array.from(root.querySelectorAll('*')).filter((element) => local(element) === name.toLowerCase())
@@ -36,6 +36,7 @@ const normalizeKind = (element: Element) => {
   const type = attr(element, 'xmi:type', 'type').toLowerCase()
   const stereotype = attr(element, 'stereotype').toLowerCase()
   if (type.includes('interface') || stereotype.includes('interface')) return 'interface'
+  if (type.includes('enumeration') || stereotype.includes('enumeration')) return 'enum'
   if (type.includes('abstract') || stereotype.includes('abstract') || attr(element, 'isAbstract') === 'true') return 'abstract'
   return 'class'
 }
@@ -91,9 +92,7 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
       const value = customAttributes.length ? name : `${visibility(attr(item, 'visibility'))}${name}${type && name !== text(item) ? `: ${type}` : ''}`
       return `${value}${children(item, 'lowerValue').length ? ` [${multiplicity(item)}]` : ''}`
     }).filter(Boolean)
-    if (attr(element, 'type').toLowerCase().includes('enumeration')) {
-      children(element, 'ownedLiteral').forEach((literal) => attributes.push(attr(literal, 'name') || text(literal)))
-    }
+    const literals = children(element, 'ownedLiteral').map((literal) => attr(literal, 'name') || text(literal)).filter(Boolean)
     const customMethods = children(element, 'methods').flatMap((group) => children(group, 'method'))
     const methods = (customMethods.length ? customMethods : children(element, 'ownedOperation')).map((item) => {
       const name = attr(item, 'name') || text(item)
@@ -104,10 +103,10 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     }).filter(Boolean)
     const box = bounds.get(id)
     return {
-      id, type: kind === 'interface' ? 'uml.Interface' : kind === 'abstract' ? 'uml.AbstractClass' : 'uml.Class',
-      name: stripPrefix(attr(element, 'name') || 'Class'), attributes, methods,
+      id, type: kind === 'interface' ? 'uml.Interface' : kind === 'abstract' ? 'uml.AbstractClass' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class',
+      name: stripPrefix(attr(element, 'name') || 'Class'), attributes: kind === 'enum' ? [] : attributes, methods: kind === 'enum' ? [] : methods, literals,
       position: box ? { x: box.x - minX + 80, y: box.y - minY + 80 } : { x: 80 + (index % 3) * 320, y: 80 + Math.floor(index / 3) * 260 },
-      size: box ? { width: box.width, height: box.height } : { width: 260, height: 120 + Math.max(attributes.length, methods.length) * 20 },
+      size: box ? { width: box.width, height: box.height } : { width: 260, height: 120 + Math.max(attributes.length, methods.length, literals.length) * 20 },
     }
   })
 
@@ -136,7 +135,14 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     const target = resolveNode(attr(item, 'general', 'supplier', 'contract'))
     add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `${type}-${index}`, type, source, target))
   })
-  all.filter((item) => attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() === 'dependency').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `dependency-${index}`, 'dependency', resolveNode(attr(item, 'client')), resolveNode(attr(item, 'supplier')))))
+  all.filter((item) => attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() === 'dependency').forEach((item, index) => {
+    const isEnumUsage = attr(item, 'stereotype').trim().toLowerCase() === 'enum' || attr(item, 'name').trim() === '«enum»'
+    const type = isEnumUsage ? 'enumUsage' : 'dependency'
+    let source = resolveNode(attr(item, 'client'))
+    let target = resolveNode(attr(item, 'supplier'))
+    if (type === 'enumUsage' && normalizeKind(resolve(source) ?? item) === 'enum' && normalizeKind(resolve(target) ?? item) !== 'enum') [source, target] = [target, source]
+    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `dependency-${index}`, type, source, target))
+  })
   all.filter((item) => ['association', 'associationclass'].includes(attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? '')).forEach((item, index) => {
     const ends = children(item, 'ownedEnd')
     const memberIds = children(item, 'memberEnd').map((member) => ref(attr(member, 'xmi:idref', 'idref')))

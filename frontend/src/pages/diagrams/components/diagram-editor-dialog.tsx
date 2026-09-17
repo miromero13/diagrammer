@@ -16,8 +16,10 @@ interface DiagramEditorDialogProps {
   mode: EditorMode
   relationConfig: EditorRelationConfig | null
   nodeHasAttributes: boolean
+  nodeIsEnum: boolean
   name: string
   attributes: string
+  literals: string
   methods: string
   sourceMultiplicity: string
   targetMultiplicity: string
@@ -25,6 +27,7 @@ interface DiagramEditorDialogProps {
   onOpenChange: (open: boolean) => void
   onNameChange: (value: string) => void
   onAttributesChange: (value: string) => void
+  onLiteralsChange: (value: string) => void
   onMethodsChange: (value: string) => void
   onSourceMultiplicityChange: (value: string) => void
   onTargetMultiplicityChange: (value: string) => void
@@ -36,8 +39,10 @@ export const DiagramEditorDialog = ({
   mode,
   relationConfig,
   nodeHasAttributes,
+  nodeIsEnum,
   name,
   attributes,
+  literals,
   methods,
   sourceMultiplicity,
   targetMultiplicity,
@@ -45,6 +50,7 @@ export const DiagramEditorDialog = ({
   onOpenChange,
   onNameChange,
   onAttributesChange,
+  onLiteralsChange,
   onMethodsChange,
   onSourceMultiplicityChange,
   onTargetMultiplicityChange,
@@ -68,7 +74,12 @@ export const DiagramEditorDialog = ({
               <Label htmlFor="editor-name">Nombre</Label>
               <Input id="editor-name" value={name} onChange={(event) => onNameChange(event.target.value)} />
             </div>
-            {nodeHasAttributes ? (
+            {nodeIsEnum ? (
+              <div className="space-y-2">
+                <Label htmlFor="editor-literals">Literals</Label>
+                <Textarea id="editor-literals" value={literals} onChange={(event) => onLiteralsChange(event.target.value)} className="min-h-28 font-mono text-sm" />
+              </div>
+            ) : nodeHasAttributes ? (
               <div className="space-y-2">
                 <Label htmlFor="editor-attributes">Atributos</Label>
                 <Textarea

@@ -6,14 +6,15 @@ import { AppConfig } from '@/config/app.config'
 
 import { socketManager } from '../socketManager'
 
-type UmlKind = 'class' | 'interface' | 'abstract'
-type UmlRelation = 'association' | 'dependency' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
+type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
+type UmlRelation = 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
 
 interface DiagramNodeData extends Record<string, unknown> {
   name: string
   kind: UmlKind
   attributes: string[]
   methods: string[]
+  literals: string[]
   onEdit?: (id: string) => void
   themeMode?: 'light' | 'dark'
   remoteSelectedColor?: string
@@ -72,7 +73,7 @@ const getCollaboratorLabel = (user?: CollaborationUser | null) => {
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || user.id
 }
 
-const getNodeHeight = (node: Pick<Node<DiagramNodeData>, 'data'>) => 120 + Math.max(node.data.attributes.length, node.data.methods.length) * 20
+const getNodeHeight = (node: Pick<Node<DiagramNodeData>, 'data'>) => 120 + Math.max(node.data.attributes.length, node.data.methods.length, node.data.literals.length) * 20
 
 const getNodeBounds = (node: Pick<Node<DiagramNodeData>, 'position' | 'data'>) => ({
   x: node.position.x,
@@ -203,6 +204,7 @@ const toCanvasPosition = (position: { x: number; y: number }, viewport: { x: num
 const normalizeRelationType = (relationType?: string | null): UmlRelation => {
   if (relationType === 'navigable') return 'dependency'
   if (relationType === 'dependency') return 'dependency'
+  if (relationType === 'enumUsage') return 'enumUsage'
   if (relationType === 'inheritance') return 'inheritance'
   if (relationType === 'implementation') return 'implementation'
   if (relationType === 'composition') return 'composition'
@@ -213,6 +215,7 @@ const normalizeRelationType = (relationType?: string | null): UmlRelation => {
 const relationTheme: Record<UmlRelation, { color: string, dash?: string }> = {
   association: { color: '#6b7280' },
   dependency: { color: '#374151', dash: '6 4' },
+  enumUsage: { color: '#0f766e', dash: '6 4' },
   inheritance: { color: '#111827' },
   implementation: { color: '#111827', dash: '6 4' },
   composition: { color: '#4f46e5' },
@@ -222,6 +225,7 @@ const relationTheme: Record<UmlRelation, { color: string, dash?: string }> = {
 const relationThemeDark: Record<UmlRelation, { color: string, dash?: string }> = {
   association: { color: '#cbd5e1' },
   dependency: { color: '#94a3b8', dash: '6 4' },
+  enumUsage: { color: '#5eead4', dash: '6 4' },
   inheritance: { color: '#e2e8f0' },
   implementation: { color: '#e2e8f0', dash: '6 4' },
   composition: { color: '#a5b4fc' },
@@ -235,6 +239,7 @@ const UML_RELATION_CONFIG: Record<UmlRelation, { hasMultiplicity: boolean, sourc
   inheritance: { hasMultiplicity: false },
   implementation: { hasMultiplicity: false },
   dependency: { hasMultiplicity: false },
+  enumUsage: { hasMultiplicity: false },
 }
 
 const getRelationSourceMultiplicity = (relationType: UmlRelation, value?: string | null) => {
@@ -306,6 +311,7 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
     inheritance: { strokeDasharray: undefined, markerStart: undefined, markerEnd: 'url(#uml-triangle-hollow)' },
     implementation: { strokeDasharray: '6 4', markerStart: undefined, markerEnd: 'url(#uml-triangle-hollow)' },
     dependency: { strokeDasharray: '6 4', markerStart: undefined, markerEnd: 'url(#uml-arrow-open)' },
+    enumUsage: { strokeDasharray: '6 4', markerStart: undefined, markerEnd: 'url(#uml-arrow-open)' },
     association: { strokeDasharray: undefined, markerStart: undefined, markerEnd: undefined },
   }[relationType]
 
@@ -374,6 +380,11 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
         </EdgeLabelRenderer>
       ) : null}
       <EdgeLabelRenderer>
+        {relationType === 'enumUsage' ? (
+          <div style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2 - 12}px)`, pointerEvents: 'none' }}>
+            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${isDark ? 'border-teal-700 bg-slate-900 text-teal-300' : 'border-teal-200 bg-white text-teal-700'}`}>«enum»</span>
+          </div>
+        ) : null}
         {UML_RELATION_CONFIG[relationType].hasMultiplicity && !data?.associationClassLink ? (
           <>
             <div style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${sourceBadgePosition.x}px, ${sourceBadgePosition.y}px)`, pointerEvents: 'auto' }}>
@@ -409,10 +420,10 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
 
 const UmlNode = ({ id, data, selected }: NodeProps<Node<DiagramNodeData>>) => {
   const isDark = data.themeMode === 'dark'
-  const border = selected ? (isDark ? '#93c5fd' : '#2563eb') : data.kind === 'interface' ? (isDark ? '#818cf8' : '#4f46e5') : data.kind === 'abstract' ? (isDark ? '#c084fc' : '#9333ea') : (isDark ? '#818cf8' : '#6366f1')
+  const border = selected ? (isDark ? '#93c5fd' : '#2563eb') : data.kind === 'interface' ? (isDark ? '#818cf8' : '#4f46e5') : data.kind === 'abstract' ? (isDark ? '#c084fc' : '#9333ea') : data.kind === 'enum' ? (isDark ? '#34d399' : '#059669') : (isDark ? '#818cf8' : '#6366f1')
   const remoteBorder = data.remoteSelectedColor ?? border
   const movingBorder = data.remoteMovingColor ?? border
-  const headerBg = data.kind === 'interface' ? (isDark ? '#4338ca' : '#818cf8') : data.kind === 'abstract' ? (isDark ? '#2e1065' : '#faf5ff') : (isDark ? '#111827' : '#ffffff')
+  const headerBg = data.kind === 'interface' ? (isDark ? '#4338ca' : '#818cf8') : data.kind === 'abstract' ? (isDark ? '#2e1065' : '#faf5ff') : data.kind === 'enum' ? (isDark ? '#064e3b' : '#ecfdf5') : (isDark ? '#111827' : '#ffffff')
   const bodyBg = data.kind === 'interface' ? (isDark ? '#1e1b4b' : '#eef2ff') : (isDark ? '#0f172a' : '#ffffff')
   const textColor = data.kind === 'interface' ? '#ffffff' : isDark ? '#e2e8f0' : '#1e293b'
   const isRemotelySelected = Boolean(data.remoteSelectedColor)
@@ -447,10 +458,10 @@ const UmlNode = ({ id, data, selected }: NodeProps<Node<DiagramNodeData>>) => {
       <Handle type="target" position={Position.Left} style={{ ...handleStyle, left: -6 }} />
       <Handle type="target" position={Position.Right} style={{ ...handleStyle, right: -6 }} />
       <div style={{ background: headerBg, color: textColor, padding: '10px 12px', fontFamily: 'JetBrains Mono', fontWeight: 600, fontSize: 12, textAlign: 'center' }}>
-        {data.kind === 'interface' ? `<<interface>>\n${data.name}` : data.kind === 'abstract' ? `<<abstract>>\n${data.name}` : data.name}
+        {data.kind === 'interface' ? `<<interface>>\n${data.name}` : data.kind === 'abstract' ? `<<abstract>>\n${data.name}` : data.kind === 'enum' ? `<<enumeration>>\n${data.name}` : data.name}
       </div>
-      {data.kind !== 'interface' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.attributes.length ? data.attributes.map((attribute) => <div key={attribute}>{attribute}</div>) : <div className="opacity-60">No attributes</div>}</div> : null}
-      <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'interface' ? '#312e81' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.methods.length ? data.methods.map((method) => <div key={method}>{method}</div>) : <div className="opacity-60">No methods</div>}</div>
+      {data.kind === 'enum' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#a7f3d0' : '#065f46', minHeight: 36 }}>{data.literals.length ? data.literals.map((literal) => <div key={literal}>{literal}</div>) : <div className="opacity-60">No literals</div>}</div> : data.kind !== 'interface' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.attributes.length ? data.attributes.map((attribute) => <div key={attribute}>{attribute}</div>) : <div className="opacity-60">No attributes</div>}</div> : null}
+      {data.kind !== 'enum' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'interface' ? '#312e81' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.methods.length ? data.methods.map((method) => <div key={method}>{method}</div>) : <div className="opacity-60">No methods</div>}</div> : null}
       <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, bottom: -6 }} />
       <Handle type="source" position={Position.Left} style={{ ...handleStyle, left: -6 }} />
       <Handle type="source" position={Position.Right} style={{ ...handleStyle, right: -6 }} />

@@ -39,6 +39,8 @@ interface DiagramEdgeData extends Record<string, unknown> {
   relationType: UmlRelation
   sourceMultiplicity: string
   targetMultiplicity: string
+  associationClassId?: string
+  associationClassLink?: boolean
 }
 
 interface DiagramExportDropdownProps {
@@ -98,22 +100,22 @@ export const buildEnterpriseArchitectXmi = (
     if (byId) return byId.id
     return nodes.find((node) => node.data.name === candidate)?.id
   }
-  const elements = nodes.map((node) => {
-    const type = node.data.kind === 'interface' ? 'uml:Interface' : node.data.kind === 'enum' ? 'uml:Enumeration' : 'uml:Class'
+  const associationClassIds = new Set(edges.filter((edge) => edge.data?.relationType === 'association' && !edge.data?.associationClassLink).map((edge) => edge.data?.associationClassId).filter(Boolean))
+  const classifierBody = (node: FlowNode<DiagramNodeData>) => {
     const literals = node.data.kind === 'enum' ? (node.data.literals ?? []).map((literal, index) => `<ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="${escapeXml(`${node.id}-literal-${index}`)}" name="${escapeXml(literal)}"/>`).join('') : ''
     const attributes = node.data.attributes.map((value, index) => {
       const item = parseAttribute(value)
-      const type = classifierReference(item.type)
+      const type = classifierReference(item.type) ?? item.type
       return `<ownedAttribute xmi:type="uml:Property" xmi:id="${escapeXml(`${node.id}-attribute-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}"${type ? ` type="${escapeXml(type)}"` : ''}>${item.multiplicity ? multiplicityXml(item.multiplicity, `${node.id}-attribute-${index}`) : ''}</ownedAttribute>`
     }).join('')
     const methods = node.data.methods.map((value, index) => {
       const item = parseMethod(value)
       const parameters = item.parameters.split(',').map((parameter) => parameter.trim()).filter(Boolean).map((parameter, parameterIndex) => {
         const parsed = parseAttribute(parameter)
-        const type = classifierReference(parsed.type)
+        const type = classifierReference(parsed.type) ?? parsed.type
         return `<ownedParameter xmi:type="uml:Parameter" xmi:id="${escapeXml(`${node.id}-method-${index}-parameter-${parameterIndex}`)}" name="${escapeXml(parsed.name)}"${type ? ` type="${escapeXml(type)}"` : ''}/>`
       }).join('')
-      const returnType = classifierReference(item.returnType)
+      const returnType = classifierReference(item.returnType) ?? item.returnType
       const result = returnType ? `<ownedParameter xmi:type="uml:Parameter" xmi:id="${escapeXml(`${node.id}-method-${index}-return`)}" name="return" direction="return" type="${escapeXml(returnType)}"/>` : ''
       return `<ownedOperation xmi:type="uml:Operation" xmi:id="${escapeXml(`${node.id}-method-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}">${parameters}${result}</ownedOperation>`
     }).join('')
@@ -123,7 +125,11 @@ export const buildEnterpriseArchitectXmi = (
         ? `<generalization xmi:type="uml:Generalization" xmi:id="${escapeXml(edge.id)}" specific="${escapeXml(edge.source)}" general="${escapeXml(edge.target)}"/>`
         : `<interfaceRealization xmi:type="uml:InterfaceRealization" xmi:id="${escapeXml(edge.id)}" client="${escapeXml(edge.source)}" supplier="${escapeXml(edge.target)}" contract="${escapeXml(edge.target)}"/>`
     }).join('')
-    return `<packagedElement xmi:type="${type}" xmi:id="${escapeXml(node.id)}" name="${escapeXml(node.data.name)}" visibility="public"${node.data.kind === 'abstract' ? ' isAbstract="true"' : ''}>${literals}${attributes}${methods}${ownedRelationships}</packagedElement>`
+    return `${literals}${attributes}${methods}${ownedRelationships}`
+  }
+  const elements = nodes.filter((node) => !associationClassIds.has(node.id)).map((node) => {
+    const type = node.data.kind === 'interface' ? 'uml:Interface' : node.data.kind === 'enum' ? 'uml:Enumeration' : 'uml:Class'
+    return `<packagedElement xmi:type="${type}" xmi:id="${escapeXml(node.id)}" name="${escapeXml(node.data.name)}" visibility="public"${node.data.kind === 'abstract' ? ' isAbstract="true"' : ''}>${classifierBody(node)}</packagedElement>`
   }).join('')
 
   const relationships = edges.map((edge) => {
@@ -134,6 +140,11 @@ export const buildEnterpriseArchitectXmi = (
     const sourceEnd = `${edge.id}-source`
     const targetEnd = `${edge.id}-target`
     const aggregation = type === 'composition' ? ' aggregation="composite"' : type === 'aggregation' ? ' aggregation="shared"' : ''
+    const associationClass = edge.data?.associationClassId ? nodesById.get(edge.data.associationClassId) : undefined
+    if (associationClass && type === 'association' && !edge.data?.associationClassLink) {
+      const associationClassId = associationClass.id
+      return `<packagedElement xmi:type="uml:AssociationClass" xmi:id="${escapeXml(associationClassId)}" name="${escapeXml(associationClass.data.name)}" visibility="public">${classifierBody(associationClass)}<memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}">${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}">${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd></packagedElement>`
+    }
     return `<packagedElement xmi:type="uml:Association" xmi:id="${escapeXml(edge.id)}"><memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}"${aggregation}>${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}">${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd></packagedElement>`
   }).join('')
 

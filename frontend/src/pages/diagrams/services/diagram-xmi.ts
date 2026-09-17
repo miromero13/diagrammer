@@ -20,7 +20,7 @@ const attr = (element: Element | null | undefined, ...names: string[]) => {
 const ref = (value: string) => value.trim().replace(/^#/, '').split('#').pop() ?? ''
 const text = (element: Element | null | undefined) => (element?.textContent ?? '').trim()
 const typeName = (element: Element, lookup: Map<string, Element>) => {
-  const value = ref(attr(element, 'type'))
+  const value = ref(element.getAttribute('type') || Array.from(element.attributes).find((attribute) => attribute.localName === 'type' && attribute.name !== 'xmi:type')?.value || '')
   return lookup.get(value)?.getAttribute('name') || value || 'type'
 }
 const visibility = (value: string) => ({ public: '+', private: '-', protected: '#', package: '~' }[value] ?? '')
@@ -144,12 +144,17 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `dependency-${index}`, type, source, target))
   })
   all.filter((item) => ['association', 'associationclass'].includes(attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? '')).forEach((item, index) => {
+    const associationType = attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? ''
     const ends = children(item, 'ownedEnd')
     const memberIds = children(item, 'memberEnd').map((member) => ref(attr(member, 'xmi:idref', 'idref')))
     const ordered = memberIds.length ? memberIds.map((id) => ends.find((end) => attr(end, 'xmi:id', 'xmi.id', 'id') === id)).filter(Boolean) as Element[] : ends
     if (ordered.length < 2) return
     const kind = attr(ordered[0], 'aggregation') === 'composite' ? 'composition' : attr(ordered[0], 'aggregation') === 'shared' ? 'aggregation' : 'association'
-    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `association-${index}`, kind, resolveNode(attr(ordered[0], 'type')), resolveNode(attr(ordered[1], 'type')), multiplicity(ordered[0]), multiplicity(ordered[1])))
+    const associationClassId = attr(item, 'xmi:id', 'xmi.id', 'id')
+    const relationId = associationType === 'associationclass' && associationClassId.endsWith('-association-class')
+      ? associationClassId.slice(0, -'-association-class'.length)
+      : associationClassId || `association-${index}`
+    add(relation(relationId, kind, resolveNode(attr(ordered[0], 'type')), resolveNode(attr(ordered[1], 'type')), multiplicity(ordered[0]), multiplicity(ordered[1])))
   })
 
   return { elements, connections, metadata: { version: 'reactflow', lastModified: new Date().toISOString(), elementsCount: elements.length, linksCount: connections.length } }

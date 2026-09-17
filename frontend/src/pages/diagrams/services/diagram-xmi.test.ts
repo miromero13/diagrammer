@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { buildEnterpriseArchitectXmi } from '../components/diagram-export-dropdown'
+import { materializeManyToMany } from '../many-to-many'
 import { parseDiagramXmi } from './diagram-xmi'
 
 describe('parseDiagramXmi', () => {
@@ -30,6 +31,43 @@ describe('parseDiagramXmi', () => {
 
     expect(content.connections?.map((connection) => connection.type)).toEqual(expect.arrayContaining(['inheritance', 'implementation', 'dependency', 'association', 'composition', 'aggregation']))
     expect(content.connections).toHaveLength(6)
+  })
+
+  it('exports many-to-many association classes as one UML AssociationClass classifier', () => {
+    const nodes = [
+      { id: 'user', position: { x: 0, y: 0 }, data: { name: 'User', kind: 'class' as const, attributes: [], methods: [] } },
+      { id: 'role', position: { x: 320, y: 0 }, data: { name: 'Role', kind: 'class' as const, attributes: [], methods: [] } },
+      { id: 'user-role-association-class', position: { x: 160, y: 200 }, data: { name: 'Membership', kind: 'class' as const, attributes: ['+assignedAt: Date'], methods: ['+activate(): void'] } },
+    ]
+    const exported = buildEnterpriseArchitectXmi('many-to-many', nodes, [{
+      id: 'user-role', source: 'user', target: 'role',
+      data: { relationType: 'association' as const, sourceMultiplicity: '0..*', targetMultiplicity: '0..*', associationClassId: 'user-role-association-class' },
+    }])
+
+    expect(exported).toContain('xmi:type="uml:AssociationClass"')
+    expect(exported).toContain('name="Membership"')
+    expect(exported).toContain('name="assignedAt"')
+    expect(exported).toContain('name="activate"')
+    expect(exported).not.toContain('xmi:type="uml:Association"')
+    expect(exported.match(/modelElement="user-role-association-class"/g)).toHaveLength(1)
+    expect(exported).toContain('value="0"')
+    expect(exported).toContain('value="*"')
+  })
+
+  it('round-trips the association class and both endpoint multiplicities', () => {
+    const nodes = [
+      { id: 'user', position: { x: 0, y: 0 }, data: { name: 'User', kind: 'class' as const, attributes: [], methods: [] } },
+      { id: 'role', position: { x: 320, y: 0 }, data: { name: 'Role', kind: 'class' as const, attributes: [], methods: [] } },
+      { id: 'user-role-association-class', position: { x: 160, y: 200 }, data: { name: 'Membership', kind: 'class' as const, attributes: ['+assignedAt: Date'], methods: [] } },
+    ]
+    const exported = buildEnterpriseArchitectXmi('many-to-many', nodes, [{
+      id: 'user-role', source: 'user', target: 'role',
+      data: { relationType: 'association' as const, sourceMultiplicity: '1..*', targetMultiplicity: '0..*', associationClassId: 'user-role-association-class' },
+    }])
+    const parsed = materializeManyToMany(parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>')))
+
+    expect(parsed.elements).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'user-role-association-class', name: 'Membership', attributes: ['+assignedAt: Date'] })]))
+    expect(parsed.connections).toEqual([expect.objectContaining({ id: 'user-role', associationClassId: 'user-role-association-class', sourceMultiplicity: '1..*', targetMultiplicity: '0..*' })])
   })
 
   it('imports and exports enum literals and enum references', () => {

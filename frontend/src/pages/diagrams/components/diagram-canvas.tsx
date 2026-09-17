@@ -296,6 +296,10 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
   const isRemoteSelected = Boolean(data?.remoteSelectedColor)
   const isRemoteMoving = Boolean(data?.remoteMovingColor) && !selected && !isRemoteSelected
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 12 })
+  const associationClassPosition = data?.associationClassPosition as { x: number; y: number; width?: number } | undefined
+  const associationClassPath = data?.associationClassId && !data.associationClassLink && associationClassPosition
+    ? `M ${(sourceX + targetX) / 2} ${(sourceY + targetY) / 2} L ${associationClassPosition.x + (associationClassPosition.width ?? 260) / 2} ${associationClassPosition.y}`
+    : null
   const edgeVisual = {
     composition: { strokeDasharray: undefined, markerStart: 'url(#uml-diamond-filled)', markerEnd: undefined },
     aggregation: { strokeDasharray: undefined, markerStart: 'url(#uml-diamond-hollow)', markerEnd: undefined },
@@ -332,6 +336,16 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
           filter: selected || isRemoteSelected || isRemoteMoving ? `drop-shadow(0 0 5px ${data?.remoteSelectedColor ?? data?.remoteMovingColor ?? (isDark ? 'rgba(96,165,250,0.35)' : 'rgba(37,99,235,0.28)')})` : undefined,
         }}
       />
+      {associationClassPath ? (
+        <path
+          d={associationClassPath}
+          fill="none"
+          stroke={isDark ? '#cbd5e1' : '#64748b'}
+          strokeWidth={1.5}
+          strokeDasharray="5 4"
+          pointerEvents="none"
+        />
+      ) : null}
       {isRemoteSelected || isRemoteMoving ? (
         <EdgeLabelRenderer>
           <div
@@ -360,7 +374,7 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
         </EdgeLabelRenderer>
       ) : null}
       <EdgeLabelRenderer>
-        {UML_RELATION_CONFIG[relationType].hasMultiplicity ? (
+        {UML_RELATION_CONFIG[relationType].hasMultiplicity && !data?.associationClassLink ? (
           <>
             <div style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${sourceBadgePosition.x}px, ${sourceBadgePosition.y}px)`, pointerEvents: 'auto' }}>
               <button

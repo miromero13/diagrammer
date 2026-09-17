@@ -15,6 +15,8 @@ export interface DiagramContent {
     targetId?: string
     source?: string | { id?: string }
     target?: string | { id?: string }
+    associationClassId?: string
+    associationClassLink?: boolean
     sourceMultiplicity?: string
     targetMultiplicity?: string
   }>

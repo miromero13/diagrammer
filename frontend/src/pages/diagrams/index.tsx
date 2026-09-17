@@ -19,6 +19,7 @@ import { DiagramKeyboardShortcutsMenu } from './components/diagram-keyboard-shor
 import { diagramsService } from './services/diagrams.service'
 import { diagramsAiService, type DiagramChatMessage, type DiagramChatConversationTurn } from './services/ai.service'
 import type { DiagramContent, DiagramDetailsResponse } from './models/diagram.model'
+import { materializeManyToMany } from './many-to-many'
 import { socketManager } from './socketManager'
 
 type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'association' | 'dependency' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
@@ -52,6 +53,9 @@ interface DiagramEdgeData extends Record<string, unknown> {
   remoteSelectedLabel?: string
   remoteMovingColor?: string
   remoteMovingLabel?: string
+  associationClassId?: string
+  associationClassLink?: boolean
+  associationClassPosition?: { x: number; y: number; width?: number }
 }
 
 type CollaborationUser = {
@@ -265,8 +269,13 @@ const toNodes = (content?: DiagramContent | null): Array<Node<DiagramNodeData>> 
 }
 
 const toEdges = (content?: DiagramContent | null): Array<Edge<DiagramEdgeData>> => {
+  const elementsById = new Map((content?.elements ?? []).map((element) => [String(element.id ?? ''), element]))
   return (content?.connections ?? []).map((connection) => {
     const relationType = normalizeRelationType(connection.type)
+    const associationClass = connection.associationClassId ? elementsById.get(connection.associationClassId) : undefined
+    const associationClassPosition = associationClass?.position
+      ? { x: associationClass.position.x, y: associationClass.position.y, width: associationClass.size?.width }
+      : undefined
     return {
       id: connection.id ?? createId(),
       source: String(connection.sourceId ?? (typeof connection.source === 'string' ? connection.source : connection.source?.id ?? '')),
@@ -276,6 +285,9 @@ const toEdges = (content?: DiagramContent | null): Array<Edge<DiagramEdgeData>> 
         relationType,
         sourceMultiplicity: connection.sourceMultiplicity ?? '1',
         targetMultiplicity: connection.targetMultiplicity ?? '1',
+        associationClassId: connection.associationClassId,
+        associationClassLink: connection.associationClassLink,
+        associationClassPosition,
       },
     }
   }).filter((edge) => edge.source && edge.target)
@@ -301,6 +313,8 @@ const toContent = (nodes: Array<Node<DiagramNodeData>>, edges: Array<Edge<Diagra
       targetId: edge.target,
       source: edge.source,
       target: edge.target,
+      associationClassId: edge.data?.associationClassId,
+      associationClassLink: edge.data?.associationClassLink,
       sourceMultiplicity: config.hasMultiplicity ? (config.sourceFixed ?? edge.data?.sourceMultiplicity ?? '1') : '',
       targetMultiplicity: config.hasMultiplicity ? (edge.data?.targetMultiplicity ?? '1') : '',
     }
@@ -471,9 +485,10 @@ const DiagramFlow = () => {
 
         try {
           const response = await diagramsService.getDiagram(diagramId)
-          setDiagram(response)
-          setNodes(toNodes(response.content ?? emptyContent()))
-          setEdges(toEdges(response.content ?? emptyContent()))
+          const content = materializeManyToMany(response.content ?? emptyContent())
+          setDiagram({ ...response, content })
+          setNodes(toNodes(content))
+          setEdges(toEdges(content))
           historyRef.current = {
             past: [],
             future: [],
@@ -1462,7 +1477,7 @@ const DiagramFlow = () => {
           targetMultiplicity,
         },
       } as Edge<DiagramEdgeData>) : null
-      setEdges((current) => current.map((edge) => edge.id === editorId ? ({
+      const updatedEdges = edges.map((edge) => edge.id === editorId ? ({
         ...edge,
         data: {
           ...edge.data,
@@ -1470,7 +1485,10 @@ const DiagramFlow = () => {
           sourceMultiplicity,
           targetMultiplicity,
         },
-      } as Edge<DiagramEdgeData>) : edge))
+      } as Edge<DiagramEdgeData>) : edge)
+      const normalizedContent = materializeManyToMany(toContent(nodes, updatedEdges))
+      setNodes(toNodes(normalizedContent))
+      setEdges(toEdges(normalizedContent))
       if (AppConfig.COLLABORATION_ENABLED && updatedEdge) socketManager.updateElement(editorId, serializeEdgeForCollaboration(updatedEdge))
     }
 
@@ -1485,19 +1503,20 @@ const DiagramFlow = () => {
     if (!diagramId) return
 
     pushHistory()
-    const nextNodes = toNodes(content)
-    const nextEdges = toEdges(content)
+    const normalizedContent = materializeManyToMany(content)
+    const nextNodes = toNodes(normalizedContent)
+    const nextEdges = toEdges(normalizedContent)
 
     setNodes(nextNodes)
     setEdges(nextEdges)
-    setDiagram((current) => (current ? { ...current, content } : current))
+    setDiagram((current) => (current ? { ...current, content: normalizedContent } : current))
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     setEditorOpen(false)
     setEditorId(null)
     pendingRelationSourceId.current = null
 
-    await diagramsService.quickUpdateDiagram(diagramId, content)
+    await diagramsService.quickUpdateDiagram(diagramId, normalizedContent)
   }, [diagramId, pushHistory, setDiagram, setEdges, setNodes])
 
   const sendChatMessage = useCallback(async () => {
@@ -1637,21 +1656,28 @@ const DiagramFlow = () => {
     }
   })), [nodes, openNodeEditor, selectedNodeId, themeMode, selectionCollaborationStateById, remoteMotionStateById])
 
-  const flowEdges = useMemo(() => edges.map((edge) => ({
-    ...edge,
-    selected: selectedEdgeId === edge.id,
-    type: 'umlEdge',
-    data: {
-      ...edge.data,
-      relationType: edge.data?.relationType ?? 'association',
-      onEdit: openEdgeEditor,
-      themeMode,
-      remoteSelectedColor: selectionCollaborationStateById[edge.id]?.color,
-      remoteSelectedLabel: selectionCollaborationStateById[edge.id]?.label,
-      remoteMovingColor: !selectedEdgeId && !selectionCollaborationStateById[edge.id] ? remoteMotionStateById[edge.id]?.color : undefined,
-      remoteMovingLabel: !selectedEdgeId && !selectionCollaborationStateById[edge.id] ? remoteMotionStateById[edge.id]?.label : undefined,
-    },
-  }) as Edge<DiagramEdgeData>), [edges, openEdgeEditor, remoteMotionStateById, selectedEdgeId, selectionCollaborationStateById, themeMode])
+  const flowEdges = useMemo(() => {
+    const nodesById = new Map(nodes.map((node) => [node.id, node]))
+    return edges.map((edge) => {
+      const associationClass = edge.data?.associationClassId ? nodesById.get(edge.data.associationClassId) : undefined
+      return {
+        ...edge,
+        selected: selectedEdgeId === edge.id,
+        type: 'umlEdge',
+        data: {
+          ...edge.data,
+          relationType: edge.data?.relationType ?? 'association',
+          associationClassPosition: associationClass ? { x: associationClass.position.x, y: associationClass.position.y, width: associationClass.measured?.width ?? NODE_WIDTH } : undefined,
+          onEdit: openEdgeEditor,
+          themeMode,
+          remoteSelectedColor: selectionCollaborationStateById[edge.id]?.color,
+          remoteSelectedLabel: selectionCollaborationStateById[edge.id]?.label,
+          remoteMovingColor: !selectedEdgeId && !selectionCollaborationStateById[edge.id] ? remoteMotionStateById[edge.id]?.color : undefined,
+          remoteMovingLabel: !selectedEdgeId && !selectionCollaborationStateById[edge.id] ? remoteMotionStateById[edge.id]?.label : undefined,
+        },
+      } as Edge<DiagramEdgeData>
+    })
+  }, [edges, nodes, openEdgeEditor, remoteMotionStateById, selectedEdgeId, selectionCollaborationStateById, themeMode])
 
   if (loading) return <div className="flex h-full min-h-0 items-center justify-center text-sm text-slate-500">Loading diagram...</div>
 

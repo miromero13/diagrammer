@@ -5,13 +5,14 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2 } from 'lucide-react'
 
-import { formatUmlAttribute, formatUmlMethod, parseUmlAttribute, parseUmlMethod, validateUmlAttributes, validateUmlMethods } from '../uml-member-format'
+import { formatUmlAttribute, formatUmlMethod, parseUmlAttribute, parseUmlMethod, validateUmlAttributes, validateUmlMethods, type UmlAttributeInput, type UmlMethodInput } from '../uml-member-format'
 
 type EditorMode = 'node' | 'edge'
 
 type EditorRelationConfig = {
   hasMultiplicity: boolean
   sourceFixed?: string
+  relationType: string
 }
 
 interface DiagramEditorDialogProps {
@@ -22,18 +23,32 @@ interface DiagramEditorDialogProps {
   nodeIsEnum: boolean
   name: string
   attributes: string
+  attributeSemantics: Array<Partial<UmlAttributeInput>>
   literals: string
   methods: string
+  methodSemantics: Array<Partial<UmlMethodInput>>
   sourceMultiplicity: string
   targetMultiplicity: string
   sourceMultiplicityValue: string
+  sourceRoleName: string
+  targetRoleName: string
+  sourceNavigable: boolean
+  targetNavigable: boolean
+  relationStereotype: string
   onOpenChange: (open: boolean) => void
   onNameChange: (value: string) => void
   onAttributesChange: (value: string) => void
+  onAttributeSemanticsChange: (value: Array<Partial<UmlAttributeInput>>) => void
   onLiteralsChange: (value: string) => void
   onMethodsChange: (value: string) => void
+  onMethodSemanticsChange: (value: Array<Partial<UmlMethodInput>>) => void
   onSourceMultiplicityChange: (value: string) => void
   onTargetMultiplicityChange: (value: string) => void
+  onSourceRoleNameChange: (value: string) => void
+  onTargetRoleNameChange: (value: string) => void
+  onSourceNavigableChange: (value: boolean) => void
+  onTargetNavigableChange: (value: boolean) => void
+  onRelationStereotypeChange: (value: string) => void
   onSave: () => void
 }
 
@@ -45,27 +60,50 @@ export const DiagramEditorDialog = ({
   nodeIsEnum,
   name,
   attributes,
+  attributeSemantics,
   literals,
   methods,
+  methodSemantics,
   sourceMultiplicity,
   targetMultiplicity,
   sourceMultiplicityValue,
+  sourceRoleName,
+  targetRoleName,
+  sourceNavigable,
+  targetNavigable,
+  relationStereotype,
   onOpenChange,
   onNameChange,
   onAttributesChange,
+  onAttributeSemanticsChange,
   onLiteralsChange,
   onMethodsChange,
+  onMethodSemanticsChange,
   onSourceMultiplicityChange,
   onTargetMultiplicityChange,
+  onSourceRoleNameChange,
+  onTargetRoleNameChange,
+  onSourceNavigableChange,
+  onTargetNavigableChange,
+  onRelationStereotypeChange,
   onSave,
 }: DiagramEditorDialogProps) => {
   const attributeErrors = nodeHasAttributes ? validateUmlAttributes(attributes) : []
   const methodErrors = !nodeIsEnum ? validateUmlMethods(methods) : []
   const memberError = [...attributeErrors, ...methodErrors][0]
-  const attributeRows = attributes.split('\n').filter(Boolean).map(parseUmlAttribute)
-  const methodRows = methods.split('\n').filter(Boolean).map(parseUmlMethod)
-  const updateAttributes = (index: number, field: string, value: string) => onAttributesChange(attributeRows.map((row, rowIndex) => formatUmlAttribute(rowIndex === index ? { ...row, [field]: value } : row)).join('\n'))
-  const updateMethods = (index: number, field: string, value: string) => onMethodsChange(methodRows.map((row, rowIndex) => formatUmlMethod(rowIndex === index ? { ...row, [field]: value } : row)).join('\n'))
+  const attributeRows: UmlAttributeInput[] = attributes.split('\n').filter(Boolean).map((line, index) => ({ ...parseUmlAttribute(line), ...attributeSemantics[index] }))
+  const methodRows: UmlMethodInput[] = methods.split('\n').filter(Boolean).map((line, index) => ({ ...parseUmlMethod(line), ...methodSemantics[index] }))
+  const updateAttributes = (index: number, field: string, value: string | boolean) => {
+    const rows = attributeRows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row)
+    onAttributesChange(rows.map(formatUmlAttribute).join('\n'))
+    onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue })))
+  }
+  const updateMethods = (index: number, field: string, value: string | boolean) => {
+    const rows = methodRows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row)
+    onMethodsChange(rows.map(formatUmlMethod).join('\n'))
+    onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived })))
+  }
+  const visibilityOptions = [['', 'Predeterminada'], ['+', 'Pública'], ['-', 'Privada'], ['#', 'Protegida'], ['~', 'Paquete']] as const
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,14 +132,22 @@ export const DiagramEditorDialog = ({
               <div className="space-y-2">
                 <Label>Atributos</Label>
                 <div className="space-y-2">
-                  {attributeRows.length > 0 && <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_70px_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Nombre</span><span>Tipo</span><span>Mult.</span></div>}
+                  {attributeRows.length > 0 && <div className="hidden grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_70px_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Vis.</span><span>Nombre</span><span>Tipo</span><span>Mult.</span></div>}
                   {attributeRows.map((row, index) => <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_70px_32px]">
+                    <select aria-label="Visibilidad del atributo" value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+                      {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
                     <Input aria-label="Nombre del atributo" value={row.name} onChange={(event) => updateAttributes(index, 'name', event.target.value)} placeholder="nombre" />
                     <Input aria-label="Tipo del atributo" value={row.type} onChange={(event) => updateAttributes(index, 'type', event.target.value)} placeholder="Tipo opcional" />
                     <Input aria-label="Multiplicidad" value={row.multiplicity} onChange={(event) => updateAttributes(index, 'multiplicity', event.target.value)} placeholder="0..*" />
-                    <Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => onAttributesChange(attributeRows.filter((_, rowIndex) => rowIndex !== index).map(formatUmlAttribute).join('\n'))}><Trash2 className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => { const rows = attributeRows.filter((_, rowIndex) => rowIndex !== index); onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Trash2 className="size-4" /></Button>
+                    <div className="col-span-2 flex flex-wrap gap-3 text-xs text-muted-foreground sm:col-span-4">
+                      <label><input type="checkbox" checked={Boolean(row.isStatic)} onChange={(event) => updateAttributes(index, 'isStatic', event.target.checked)} /> estático</label>
+                      <label><input type="checkbox" checked={Boolean(row.isDerived)} onChange={(event) => updateAttributes(index, 'isDerived', event.target.checked)} /> derivado</label>
+                      <label className="flex items-center gap-1">Valor predeterminado <Input aria-label="Valor predeterminado del atributo" value={row.defaultValue ?? ''} onChange={(event) => updateAttributes(index, 'defaultValue', event.target.value)} className="h-7 w-28" /></label>
+                    </div>
                   </div>)}
-                  <Button type="button" variant="outline" size="sm" onClick={() => onAttributesChange([...attributeRows, { name: 'atributo', type: '', multiplicity: '' }].map(formatUmlAttribute).join('\n'))}><Plus className="mr-1 size-4" />Atributo</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => { const rows: UmlAttributeInput[] = [...attributeRows, { name: 'atributo', type: '', multiplicity: '', visibility: '', isStatic: false, isAbstract: false, isDerived: false, defaultValue: '' }]; onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Plus className="mr-1 size-4" />Atributo</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">El tipo es opcional. La notación UML se genera automáticamente.</p>
               </div>
@@ -110,19 +156,33 @@ export const DiagramEditorDialog = ({
               <Label>Métodos</Label>
               <div className="space-y-2">
                 {methodRows.length > 0 && <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Nombre</span><span>Parámetros</span><span>Retorno</span></div>}
-                {methodRows.map((row, index) => <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]">
+                  {methodRows.map((row, index) => <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]">
+                  <select aria-label="Visibilidad del método" value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+                    {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
                   <Input aria-label="Nombre del método" value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" />
                   <Input aria-label="Parámetros (opcionales)" value={row.parameters} onChange={(event) => updateMethods(index, 'parameters', event.target.value)} placeholder="item: Item" />
                   <Input aria-label="Retorno" value={row.returnType} onChange={(event) => updateMethods(index, 'returnType', event.target.value)} placeholder="void" />
-                  <Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => onMethodsChange(methodRows.filter((_, rowIndex) => rowIndex !== index).map(formatUmlMethod).join('\n'))}><Trash2 className="size-4" /></Button>
+                   <Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => { const rows = methodRows.filter((_, rowIndex) => rowIndex !== index); onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Trash2 className="size-4" /></Button>
+                  <div className="col-span-2 flex gap-3 text-xs text-muted-foreground sm:col-span-4">
+                    <label><input type="checkbox" checked={Boolean(row.isStatic)} onChange={(event) => updateMethods(index, 'isStatic', event.target.checked)} /> estático</label>
+                    <label><input type="checkbox" checked={Boolean(row.isAbstract)} onChange={(event) => updateMethods(index, 'isAbstract', event.target.checked)} /> abstracto</label>
+                  </div>
                 </div>)}
-                <Button type="button" variant="outline" size="sm" onClick={() => onMethodsChange([...methodRows, { name: 'metodo', parameters: '', returnType: 'void' }].map(formatUmlMethod).join('\n'))}><Plus className="mr-1 size-4" />Método</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => { const rows: UmlMethodInput[] = [...methodRows, { name: 'metodo', parameters: '', returnType: 'void', visibility: '', isStatic: false, isAbstract: false, isDerived: false, defaultValue: '' }]; onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Plus className="mr-1 size-4" />Método</Button>
               </div>
               <p className="text-xs text-muted-foreground">Ejemplo: `calcularTotal(items: List&lt;Item&gt;): Decimal`. Parámetros separados por coma.</p>
             </div>}
             {memberError && <p className="text-sm text-destructive">{memberError}</p>}
           </div>
-        ) : relationConfig && !relationConfig.hasMultiplicity ? (
+        ) : relationConfig && (
+          <div className="space-y-4">
+            {(relationConfig.relationType === 'association' || relationConfig.relationType === 'aggregation' || relationConfig.relationType === 'composition') && <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label htmlFor="editor-source-role">Rol origen</Label><Input id="editor-source-role" value={sourceRoleName} onChange={(event) => onSourceRoleNameChange(event.target.value)} placeholder="rol" /><label className="text-xs text-muted-foreground"><input type="checkbox" checked={sourceNavigable} onChange={(event) => onSourceNavigableChange(event.target.checked)} /> navegable</label></div>
+              <div className="space-y-2"><Label htmlFor="editor-target-role">Rol destino</Label><Input id="editor-target-role" value={targetRoleName} onChange={(event) => onTargetRoleNameChange(event.target.value)} placeholder="rol" /><label className="text-xs text-muted-foreground"><input type="checkbox" checked={targetNavigable} onChange={(event) => onTargetNavigableChange(event.target.checked)} /> navegable</label></div>
+            </div>}
+            {relationConfig.relationType === 'dependency' && <div className="space-y-2"><Label htmlFor="editor-stereotype">Estereotipo</Label><Input id="editor-stereotype" value={relationStereotype} onChange={(event) => onRelationStereotypeChange(event.target.value)} placeholder="use" /></div>}
+            {relationConfig && !relationConfig.hasMultiplicity ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
             Esta relación no usa multiplicidades.
           </div>
@@ -162,6 +222,8 @@ export const DiagramEditorDialog = ({
                 placeholder="1"
               />
             </div>
+          </div>
+        )}
           </div>
         )}
 

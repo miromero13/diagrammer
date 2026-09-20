@@ -32,7 +32,7 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 ## Checklist
 
 - [x] UML25-1: Define a backward-compatible canonical model for classifier/member/relationship semantics.
-- [ ] UML25-2: Update editor and canvas for abstract classifiers, visibility, member modifiers/defaults, roles, and navigability.
+- [x] UML25-2: Update editor and canvas for abstract classifiers, visibility, member modifiers/defaults, roles, and navigability.
 - [ ] UML25-3: Replace `enumUsage` handling with stereotyped dependency semantics while accepting legacy data.
 - [ ] UML25-4: Add relationship endpoint, multiplicity, and composition/association semantic validation.
 - [ ] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
@@ -60,8 +60,8 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-1 complete; the content model now has optional abstract/member semantic, relationship role/navigability, stereotype/usage, and UMLDI waypoint fields. Member parsing/rendering preserves legacy strings while exposing visibility, static, abstract, derived, and default-value semantics.
+Current: UML25-2 complete; the active editor/canvas now stores canonical abstract classifiers, edits member visibility/modifiers/default values, and edits/renders association roles and navigability. Legacy abstract names/types remain readable.
 
 ## Next Step
 
-Next: update the active editor/canvas and canonical dependency handling, then complete validation and XMI/UMLDI round-trip.
+Next: canonicalize enum dependencies, add reusable relationship validation, and complete XMI/UMLDI round-trip.

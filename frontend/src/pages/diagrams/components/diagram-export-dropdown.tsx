@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { parseUmlAttribute, parseUmlMethod } from '../uml-member-format'
 
 type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
 type UmlRelation =
@@ -33,12 +34,21 @@ interface DiagramNodeData extends Record<string, unknown> {
   attributes: string[]
   methods: string[]
   literals?: string[]
+  attributeSemantics?: Array<{ visibility?: string; isStatic?: boolean; isAbstract?: boolean; isDerived?: boolean; defaultValue?: string }>
+  methodSemantics?: Array<{ visibility?: string; isStatic?: boolean; isAbstract?: boolean; isDerived?: boolean }>
 }
 
 interface DiagramEdgeData extends Record<string, unknown> {
   relationType: UmlRelation
   sourceMultiplicity: string
   targetMultiplicity: string
+  sourceRoleName?: string
+  targetRoleName?: string
+  sourceNavigable?: boolean
+  targetNavigable?: boolean
+  stereotype?: string
+  usage?: string
+  waypoints?: Array<{ x: number; y: number }>
   associationClassId?: string
   associationClassLink?: boolean
 }
@@ -87,7 +97,8 @@ export const buildEnterpriseArchitectXmi = (
 ) => {
   const nodesById = new Map(nodes.map((node) => [node.id, node]))
   const enumUsageEndpoints = (edge: FlowEdge<DiagramEdgeData>) => {
-    if (edge.data?.relationType !== 'enumUsage') return { source: edge.source, target: edge.target }
+    const enumUsage = edge.data?.relationType === 'enumUsage' || edge.data?.usage === 'enum' || edge.data?.stereotype === 'use'
+    if (!enumUsage) return { source: edge.source, target: edge.target }
     const source = nodesById.get(edge.source)
     const target = nodesById.get(edge.target)
     return source?.data.kind === 'enum' && target?.data.kind !== 'enum'
@@ -104,12 +115,14 @@ export const buildEnterpriseArchitectXmi = (
   const classifierBody = (node: FlowNode<DiagramNodeData>) => {
     const literals = node.data.kind === 'enum' ? (node.data.literals ?? []).map((literal, index) => `<ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="${escapeXml(`${node.id}-literal-${index}`)}" name="${escapeXml(literal)}"/>`).join('') : ''
     const attributes = node.data.attributes.map((value, index) => {
-      const item = parseAttribute(value)
+      const item = parseAttribute(value), semantic = { ...parseUmlAttribute(value), ...node.data.attributeSemantics?.[index] }
       const type = classifierReference(item.type) ?? item.type
-      return `<ownedAttribute xmi:type="uml:Property" xmi:id="${escapeXml(`${node.id}-attribute-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}"${type ? ` type="${escapeXml(type)}"` : ''}>${item.multiplicity ? multiplicityXml(item.multiplicity, `${node.id}-attribute-${index}`) : ''}</ownedAttribute>`
+      const flags = `${semantic.isStatic ? ' isStatic="true"' : ''}${semantic.isAbstract ? ' isAbstract="true"' : ''}${semantic.isDerived ? ' isDerived="true"' : ''}`
+      const defaultXml = semantic.defaultValue ? `<defaultValue xmi:type="uml:LiteralString" value="${escapeXml(semantic.defaultValue)}"/>` : ''
+      return `<ownedAttribute xmi:type="uml:Property" xmi:id="${escapeXml(`${node.id}-attribute-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}"${type ? ` type="${escapeXml(type)}"` : ''}${flags}>${item.multiplicity ? multiplicityXml(item.multiplicity, `${node.id}-attribute-${index}`) : ''}${defaultXml}</ownedAttribute>`
     }).join('')
     const methods = node.data.methods.map((value, index) => {
-      const item = parseMethod(value)
+      const item = parseMethod(value), semantic = { ...parseUmlMethod(value), ...node.data.methodSemantics?.[index] }
       const parameters = item.parameters.split(',').map((parameter) => parameter.trim()).filter(Boolean).map((parameter, parameterIndex) => {
         const parsed = parseAttribute(parameter)
         const type = classifierReference(parsed.type) ?? parsed.type
@@ -117,7 +130,8 @@ export const buildEnterpriseArchitectXmi = (
       }).join('')
       const returnType = classifierReference(item.returnType) ?? item.returnType
       const result = returnType ? `<ownedParameter xmi:type="uml:Parameter" xmi:id="${escapeXml(`${node.id}-method-${index}-return`)}" name="return" direction="return" type="${escapeXml(returnType)}"/>` : ''
-      return `<ownedOperation xmi:type="uml:Operation" xmi:id="${escapeXml(`${node.id}-method-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}">${parameters}${result}</ownedOperation>`
+      const flags = `${semantic.isStatic ? ' isStatic="true"' : ''}${semantic.isAbstract ? ' isAbstract="true"' : ''}`
+      return `<ownedOperation xmi:type="uml:Operation" xmi:id="${escapeXml(`${node.id}-method-${index}`)}" name="${escapeXml(item.name)}" visibility="${item.visibility}"${flags}>${parameters}${result}</ownedOperation>`
     }).join('')
     const ownedRelationships = edges.filter((edge) => edge.source === node.id && ['inheritance', 'implementation'].includes(edge.data?.relationType ?? '')).map((edge) => {
       const relationType = edge.data?.relationType
@@ -136,7 +150,10 @@ export const buildEnterpriseArchitectXmi = (
     const type = edge.data?.relationType ?? 'association'
     const endpoints = enumUsageEndpoints(edge)
     if (type === 'inheritance' || type === 'implementation') return ''
-    if (type === 'dependency' || type === 'enumUsage') return `<packagedElement xmi:type="uml:Dependency" xmi:id="${escapeXml(edge.id)}" client="${escapeXml(endpoints.source)}" supplier="${escapeXml(endpoints.target)}"${type === 'enumUsage' ? ' name="«enum»" stereotype="enum"' : ''}/>`
+    if (type === 'dependency' || type === 'enumUsage') {
+      const enumUsage = type === 'enumUsage' || edge.data?.usage === 'enum' || edge.data?.stereotype === 'use'
+      return `<packagedElement xmi:type="uml:Dependency" xmi:id="${escapeXml(edge.id)}" client="${escapeXml(endpoints.source)}" supplier="${escapeXml(endpoints.target)}"${enumUsage ? ' name="«use»" stereotype="use"' : edge.data?.stereotype ? ` stereotype="${escapeXml(edge.data.stereotype)}"` : ''}/>`
+    }
     const sourceEnd = `${edge.id}-source`
     const targetEnd = `${edge.id}-target`
     const aggregation = type === 'composition' ? ' aggregation="composite"' : type === 'aggregation' ? ' aggregation="shared"' : ''
@@ -145,15 +162,19 @@ export const buildEnterpriseArchitectXmi = (
       const associationClassId = associationClass.id
       return `<packagedElement xmi:type="uml:AssociationClass" xmi:id="${escapeXml(associationClassId)}" name="${escapeXml(associationClass.data.name)}" visibility="public">${classifierBody(associationClass)}<memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}">${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}">${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd></packagedElement>`
     }
-    return `<packagedElement xmi:type="uml:Association" xmi:id="${escapeXml(edge.id)}"><memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}"${aggregation}>${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}">${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd></packagedElement>`
+    const sourceRole = edge.data?.sourceRoleName ? ` name="${escapeXml(edge.data.sourceRoleName)}"` : ''
+    const targetRole = edge.data?.targetRoleName ? ` name="${escapeXml(edge.data.targetRoleName)}"` : ''
+    const navigable = `${edge.data?.sourceNavigable ? `<navigableOwnedEnd xmi:idref="${escapeXml(sourceEnd)}"/>` : ''}${edge.data?.targetNavigable ? `<navigableOwnedEnd xmi:idref="${escapeXml(targetEnd)}"/>` : ''}`
+    return `<packagedElement xmi:type="uml:Association" xmi:id="${escapeXml(edge.id)}"><memberEnd xmi:idref="${escapeXml(sourceEnd)}"/><memberEnd xmi:idref="${escapeXml(targetEnd)}"/><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(sourceEnd)}" type="${escapeXml(edge.source)}"${sourceRole}${aggregation}>${multiplicityXml(edge.data?.sourceMultiplicity, sourceEnd)}</ownedEnd><ownedEnd xmi:type="uml:Property" xmi:id="${escapeXml(targetEnd)}" type="${escapeXml(edge.target)}"${targetRole}>${multiplicityXml(edge.data?.targetMultiplicity, targetEnd)}</ownedEnd>${navigable}</packagedElement>`
   }).join('')
 
   const shapes = nodes.map((node) => `<ownedElement xmi:type="umldi:UMLClassifierShape" xmi:id="shape-${escapeXml(node.id)}" modelElement="${escapeXml(node.id)}"><bounds xmi:type="dc:Bounds" x="${node.position.x}" y="${node.position.y}" width="260" height="${120 + Math.max(node.data.attributes.length, node.data.methods.length, node.data.literals?.length ?? 0) * 20}"/></ownedElement>`).join('')
+  const edgeGeometry = edges.filter((edge) => edge.data?.waypoints?.length).map((edge) => `<ownedElement xmi:type="umldi:UMLEdge" xmi:id="edge-${escapeXml(edge.id)}" source="shape-${escapeXml(edge.source)}" target="shape-${escapeXml(edge.target)}" modelElement="${escapeXml(edge.id)}">${edge.data?.waypoints?.map((point, index) => `<waypoint xmi:type="dc:Point" xmi:id="waypoint-${escapeXml(edge.id)}-${index}" x="${point.x}" y="${point.y}"/>`).join('')}</ownedElement>`).join('')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <xmi:XMI xmi:version="2.5.1" xmlns:xmi="http://www.omg.org/spec/XMI/20131001" xmlns:uml="http://www.omg.org/spec/UML/20131001" xmlns:umldi="http://www.omg.org/spec/UML/20131001/UMLDI" xmlns:dc="http://www.omg.org/spec/UML/20131001/UMLDC">
   <uml:Model xmi:type="uml:Model" xmi:id="model" name="${escapeXml(diagramName)}">${elements}${relationships}</uml:Model>
-  <umldi:Diagram xmi:type="umldi:UMLClassDiagram" xmi:id="diagram" name="${escapeXml(diagramName)}" modelElement="model">${shapes}</umldi:Diagram>
+   <umldi:Diagram xmi:type="umldi:UMLClassDiagram" xmi:id="diagram" name="${escapeXml(diagramName)}" modelElement="model">${shapes}${edgeGeometry}</umldi:Diagram>
 </xmi:XMI>
 `
 }

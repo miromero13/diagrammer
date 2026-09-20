@@ -1,4 +1,4 @@
-import type { DiagramContent } from '../models/diagram.model'
+import type { DiagramContent, UmlMemberSemantics, UmlWayPoint } from '../models/diagram.model'
 
 const stripPrefix = (value: string) => value.replace(/^<<(?:interface|abstract|enumeration)>>\n/, '')
 const local = (element: Element) => (element.localName || element.tagName.split(':').pop() || '').toLowerCase()
@@ -32,6 +32,19 @@ const multiplicity = (element: Element) => {
   return low === high ? low : `${low}..${high}`
 }
 
+const booleanAttribute = (element: Element, name: string) => attr(element, name).toLowerCase() === 'true'
+const defaultValue = (element: Element) => {
+  const value = children(element, 'defaultValue')[0]
+  return attr(value, 'value') || text(value)
+}
+const memberSemantics = (element: Element): UmlMemberSemantics => ({
+  visibility: visibility(attr(element, 'visibility')) as UmlMemberSemantics['visibility'],
+  isStatic: booleanAttribute(element, 'isStatic'),
+  isAbstract: booleanAttribute(element, 'isAbstract'),
+  isDerived: booleanAttribute(element, 'isDerived'),
+  defaultValue: defaultValue(element) || undefined,
+})
+
 const normalizeKind = (element: Element) => {
   const type = attr(element, 'xmi:type', 'type').toLowerCase()
   const stereotype = attr(element, 'stereotype').toLowerCase()
@@ -41,8 +54,8 @@ const normalizeKind = (element: Element) => {
   return 'class'
 }
 
-const relation = (id: string, type: string, source: string, target: string, sourceMultiplicity = '1', targetMultiplicity = '1') => ({
-  id, type, sourceId: source, targetId: target, source, target, sourceMultiplicity, targetMultiplicity,
+const relation = (id: string, type: string, source: string, target: string, sourceMultiplicity = '1', targetMultiplicity = '1', extra: Record<string, unknown> = {}) => ({
+  id, type, sourceId: source, targetId: target, source, target, sourceMultiplicity, targetMultiplicity, ...extra,
 })
 
 export const parseDiagramXmi = (xml: string): DiagramContent => {
@@ -64,7 +77,7 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     const key = ref(value)
     return byId.get(key) || byName.get(key) || byName.get(value)
   }
-  const classifierTypes = new Set(['class', 'interface', 'enumeration', 'associationclass', 'signal', 'component', 'actor', 'usecase', 'datatype'])
+  const classifierTypes = new Set(['class', 'abstractclass', 'interface', 'enumeration', 'associationclass', 'signal', 'component', 'actor', 'usecase', 'datatype'])
   const classifiers = all.filter((element) => {
     const type = attr(element, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? ''
     return (local(element) === 'element' || local(element) === 'packagedelement') && (local(element) === 'element' || classifierTypes.has(type))
@@ -78,33 +91,50 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     const values = ['x', 'y', 'width', 'height'].map((name) => Number(attr(bound, name)))
     if (values.every(Number.isFinite)) bounds.set(modelId, { x: values[0], y: values[1], width: values[2], height: values[3] })
   })
+  const waypointsByModelId = new Map<string, UmlWayPoint[]>()
+  descendants(document, 'ownedElement').forEach((edge) => {
+    const type = attr(edge, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? ''
+    if (!type.endsWith('edge')) return
+    const modelId = ref(attr(edge, 'modelElement'))
+    if (!modelId) return
+    const points = children(edge, 'waypoint').map((point) => ({ x: Number(attr(point, 'x')), y: Number(attr(point, 'y')) })).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    if (points.length) waypointsByModelId.set(modelId, points)
+  })
   const placed = classifiers.map((element) => bounds.get(attr(element, 'xmi:id', 'xmi.id', 'id'))).filter(Boolean) as Array<{ x: number, y: number, width: number, height: number }>
   const minX = placed.length ? Math.min(...placed.map((item) => item.x)) : 0
   const minY = placed.length ? Math.min(...placed.map((item) => item.y)) : 0
+  const normalizedWaypoints = (id: string) => waypointsByModelId.get(id)?.map((point) => ({ ...point }))
 
   const elements = classifiers.map((element, index) => {
     const id = attr(element, 'xmi:id', 'xmi.id', 'id') || `imported-${index}`
     const kind = normalizeKind(element)
     const customAttributes = children(element, 'attributes').flatMap((group) => children(group, 'attribute'))
-    const attributes = (customAttributes.length ? customAttributes : children(element, 'ownedAttribute').filter((item) => !attr(item, 'association'))).map((item) => {
+    const attributeItems = customAttributes.length ? customAttributes : children(element, 'ownedAttribute').filter((item) => !attr(item, 'association'))
+    const attributes = attributeItems.map((item) => {
       const name = attr(item, 'name') || text(item)
       const type = typeName(item, byId)
-      const value = customAttributes.length ? name : `${visibility(attr(item, 'visibility'))}${name}${type && name !== text(item) ? `: ${type}` : ''}`
+      const semantics = memberSemantics(item)
+      const value = customAttributes.length ? `${semantics.visibility ?? ''}${name}` : `${semantics.visibility ?? ''}${semantics.isDerived ? '/' : ''}${name}${type && name !== text(item) ? `: ${type}` : ''}`
       return `${value}${children(item, 'lowerValue').length ? ` [${multiplicity(item)}]` : ''}`
     }).filter(Boolean)
     const literals = children(element, 'ownedLiteral').map((literal) => attr(literal, 'name') || text(literal)).filter(Boolean)
     const customMethods = children(element, 'methods').flatMap((group) => children(group, 'method'))
-    const methods = (customMethods.length ? customMethods : children(element, 'ownedOperation')).map((item) => {
+    const methodItems = customMethods.length ? customMethods : children(element, 'ownedOperation')
+    const methods = methodItems.map((item) => {
       const name = attr(item, 'name') || text(item)
       if (customMethods.length) return name
       const parameters = children(item, 'ownedParameter').filter((parameter) => attr(parameter, 'direction') !== 'return').map((parameter) => `${attr(parameter, 'name') || 'param'}: ${typeName(parameter, byId)}`).join(', ')
       const returnParameter = children(item, 'ownedParameter').find((parameter) => attr(parameter, 'direction') === 'return')
       return `${visibility(attr(item, 'visibility'))}${name}(${parameters})${returnParameter ? `: ${typeName(returnParameter, byId)}` : ''}`
     }).filter(Boolean)
+    const attributeSemantics = attributeItems.map(memberSemantics)
+    const methodSemantics = methodItems.map(memberSemantics)
     const box = bounds.get(id)
     return {
-      id, type: kind === 'interface' ? 'uml.Interface' : kind === 'abstract' ? 'uml.AbstractClass' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class',
+      id, type: kind === 'interface' ? 'uml.Interface' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class', isAbstract: kind === 'abstract',
       name: stripPrefix(attr(element, 'name') || 'Class'), attributes: kind === 'enum' ? [] : attributes, methods: kind === 'enum' ? [] : methods, literals,
+      attributeSemantics: kind === 'enum' ? [] : attributeSemantics,
+      methodSemantics: kind === 'enum' ? [] : methodSemantics,
       position: box ? { x: box.x - minX + 80, y: box.y - minY + 80 } : { x: 80 + (index % 3) * 320, y: 80 + Math.floor(index / 3) * 260 },
       size: box ? { width: box.width, height: box.height } : { width: 260, height: 120 + Math.max(attributes.length, methods.length, literals.length) * 20 },
     }
@@ -123,25 +153,25 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     if (seen.has(key)) return
     seen.add(key); connections.push(item)
   }
-  descendants(document, 'connector').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `connector-${index}`, attr(item, 'type') || 'association', resolveNode(attr(item, 'source', 'sourceId')), resolveNode(attr(item, 'target', 'targetId')), attr(item, 'sourceMultiplicity') || '1', attr(item, 'targetMultiplicity') || '1')))
+  descendants(document, 'connector').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `connector-${index}`, attr(item, 'type') || 'association', resolveNode(attr(item, 'source', 'sourceId')), resolveNode(attr(item, 'target', 'targetId')), attr(item, 'sourceMultiplicity') || '1', attr(item, 'targetMultiplicity') || '1', { waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')) })))
   classifiers.forEach((owner) => {
     const ownerId = attr(owner, 'xmi:id', 'xmi.id', 'id')
-    children(owner, 'generalization').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `generalization-${index}`, 'inheritance', ownerId, resolveNode(attr(item, 'general')))))
-    children(owner, 'interfaceRealization').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `implementation-${index}`, 'implementation', resolveNode(attr(item, 'client')) || ownerId, resolveNode(attr(item, 'supplier', 'contract')))))
+    children(owner, 'generalization').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `generalization-${index}`, 'inheritance', ownerId, resolveNode(attr(item, 'general')), '1', '1', { waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')) })))
+    children(owner, 'interfaceRealization').forEach((item, index) => add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `implementation-${index}`, 'implementation', resolveNode(attr(item, 'client')) || ownerId, resolveNode(attr(item, 'supplier', 'contract')), '1', '1', { waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')) })))
   })
   all.filter((item) => ['generalization', 'interfacerealization'].includes(local(item))).forEach((item, index) => {
     const type = local(item) === 'generalization' ? 'inheritance' : 'implementation'
     const source = resolveNode(attr(item, 'specific', 'client'))
     const target = resolveNode(attr(item, 'general', 'supplier', 'contract'))
-    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `${type}-${index}`, type, source, target))
+    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `${type}-${index}`, type, source, target, '1', '1', { waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')) }))
   })
   all.filter((item) => attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() === 'dependency').forEach((item, index) => {
-    const isEnumUsage = attr(item, 'stereotype').trim().toLowerCase() === 'enum' || attr(item, 'name').trim() === '«enum»'
-    const type = isEnumUsage ? 'enumUsage' : 'dependency'
+    const isEnumUsage = ['enum', 'use'].includes(attr(item, 'stereotype').trim().toLowerCase()) || ['«enum»', '«use»'].includes(attr(item, 'name').trim().toLowerCase())
+    const type = 'dependency'
     let source = resolveNode(attr(item, 'client'))
     let target = resolveNode(attr(item, 'supplier'))
-    if (type === 'enumUsage' && normalizeKind(resolve(source) ?? item) === 'enum' && normalizeKind(resolve(target) ?? item) !== 'enum') [source, target] = [target, source]
-    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `dependency-${index}`, type, source, target))
+    if (isEnumUsage && normalizeKind(resolve(source) ?? item) === 'enum' && normalizeKind(resolve(target) ?? item) !== 'enum') [source, target] = [target, source]
+    add(relation(attr(item, 'xmi:id', 'xmi.id', 'id') || `dependency-${index}`, type, source, target, '1', '1', { stereotype: isEnumUsage ? 'use' : attr(item, 'stereotype') || undefined, usage: isEnumUsage ? 'enum' : undefined, waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')) }))
   })
   all.filter((item) => ['association', 'associationclass'].includes(attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? '')).forEach((item, index) => {
     const associationType = attr(item, 'xmi:type', 'type').split(':').pop()?.toLowerCase() ?? ''
@@ -150,11 +180,18 @@ export const parseDiagramXmi = (xml: string): DiagramContent => {
     const ordered = memberIds.length ? memberIds.map((id) => ends.find((end) => attr(end, 'xmi:id', 'xmi.id', 'id') === id)).filter(Boolean) as Element[] : ends
     if (ordered.length < 2) return
     const kind = attr(ordered[0], 'aggregation') === 'composite' ? 'composition' : attr(ordered[0], 'aggregation') === 'shared' ? 'aggregation' : 'association'
+    const navigableIds = new Set(children(item, 'navigableOwnedEnd').map((end) => ref(attr(end, 'xmi:idref', 'idref'))))
     const associationClassId = attr(item, 'xmi:id', 'xmi.id', 'id')
     const relationId = associationType === 'associationclass' && associationClassId.endsWith('-association-class')
       ? associationClassId.slice(0, -'-association-class'.length)
       : associationClassId || `association-${index}`
-    add(relation(relationId, kind, resolveNode(attr(ordered[0], 'type')), resolveNode(attr(ordered[1], 'type')), multiplicity(ordered[0]), multiplicity(ordered[1])))
+    add(relation(relationId, kind, resolveNode(attr(ordered[0], 'type')), resolveNode(attr(ordered[1], 'type')), multiplicity(ordered[0]), multiplicity(ordered[1]), {
+      sourceRoleName: attr(ordered[0], 'name') || undefined,
+      targetRoleName: attr(ordered[1], 'name') || undefined,
+      sourceNavigable: navigableIds.has(attr(ordered[0], 'xmi:id', 'xmi.id', 'id')) || booleanAttribute(ordered[0], 'isNavigable'),
+      targetNavigable: navigableIds.has(attr(ordered[1], 'xmi:id', 'xmi.id', 'id')) || booleanAttribute(ordered[1], 'isNavigable'),
+      waypoints: normalizedWaypoints(attr(item, 'xmi:id', 'xmi.id', 'id')),
+    }))
   })
 
   return { elements, connections, metadata: { version: 'reactflow', lastModified: new Date().toISOString(), elementsCount: elements.length, linksCount: connections.length } }

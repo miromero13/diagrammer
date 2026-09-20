@@ -94,10 +94,33 @@ describe('parseDiagramXmi', () => {
     ]
     const exported = buildEnterpriseArchitectXmi('enum-use', nodes, [{ id: 'uses-status', source: 'status', target: 'user', data: { relationType: 'enumUsage' as const, sourceMultiplicity: '1', targetMultiplicity: '1' } }])
     expect(exported).toContain('xmi:type="uml:Dependency"')
-    expect(exported).toContain('stereotype="enum"')
+    expect(exported).toContain('stereotype="use"')
     const content = parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>'))
 
-    expect(content.connections).toEqual([expect.objectContaining({ id: 'uses-status', type: 'enumUsage', sourceId: 'user', targetId: 'status' })])
+    expect(content.connections).toEqual([expect.objectContaining({ id: 'uses-status', type: 'dependency', stereotype: 'use', usage: 'enum', sourceId: 'user', targetId: 'status' })])
+  })
+
+  it('exports abstract classifiers as uml:Class and round-trips member semantics', () => {
+    const exported = buildEnterpriseArchitectXmi('semantics', [
+      { id: 'base', position: { x: 20, y: 30 }, data: { name: 'Base', kind: 'abstract' as const, attributes: ['-count: int'], methods: ['+reset(): void'], attributeSemantics: [{ visibility: '-', isStatic: true, isDerived: true, defaultValue: '0' }], methodSemantics: [{ visibility: '+', isAbstract: true }] } },
+    ], [])
+
+    expect(exported).toContain('xmi:type="uml:Class"')
+    expect(exported).toContain('isAbstract="true"')
+    expect(exported).not.toContain('uml:AbstractClass')
+    const content = parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>'))
+
+    expect(content.elements?.[0]).toMatchObject({ type: 'uml.Class', isAbstract: true, attributeSemantics: [{ isStatic: true, isDerived: true, defaultValue: '0' }], methodSemantics: [{ isAbstract: true }] })
+  })
+
+  it('round-trips association roles, navigability, and UMLDI waypoints', () => {
+    const exported = buildEnterpriseArchitectXmi('roles', [
+      { id: 'a', position: { x: 0, y: 0 }, data: { name: 'A', kind: 'class' as const, attributes: [], methods: [] } },
+      { id: 'b', position: { x: 300, y: 0 }, data: { name: 'B', kind: 'class' as const, attributes: [], methods: [] } },
+    ], [{ id: 'ab', source: 'a', target: 'b', data: { relationType: 'association' as const, sourceMultiplicity: '1', targetMultiplicity: '0..*', sourceRoleName: 'owner', targetRoleName: 'items', sourceNavigable: true, targetNavigable: false, waypoints: [{ x: 100, y: 60 }, { x: 200, y: 70 }] } }])
+    const content = parseDiagramXmi(exported.replace(/<([A-Za-z][\w:.-]*)([^>]*)\/>/g, '<$1$2></$1>'))
+
+    expect(content.connections).toEqual([expect.objectContaining({ sourceRoleName: 'owner', targetRoleName: 'items', sourceNavigable: true, targetNavigable: false, waypoints: [{ x: 100, y: 60 }, { x: 200, y: 70 }] })])
   })
 
   it('imports the supplied test1.xmi fixture without diagram artifacts', () => {

@@ -49,7 +49,7 @@ export const formatUmlAttribute = ({ visibility, name, type, multiplicity }: Uml
 
 export const formatUmlAttributeLabel = (input: UmlAttributeInput) => {
   const modifiers = [input.isStatic && 'static', input.isAbstract && 'abstract'].filter(Boolean).join(', ')
-  return `${input.visibility ?? ''}${input.isDerived ? '/' : ''}${input.name.trim()}${input.type.trim() ? `: ${input.type.trim()}` : ''}${input.multiplicity.trim() ? ` [${input.multiplicity.trim()}]` : ''}${input.defaultValue.trim() ? ` = ${input.defaultValue.trim()}` : ''}${modifiers ? ` {${modifiers}}` : ''}`
+  return `${input.visibility ?? ''}${input.isDerived ? '/' : ''}${input.name.trim()}${input.type.trim() ? `: ${input.type.trim()}` : ''}${input.multiplicity.trim() ? ` [${input.multiplicity.trim()}]` : ''}${input.defaultValue?.trim() ? ` = ${input.defaultValue.trim()}` : ''}${modifiers ? ` {${modifiers}}` : ''}`
 }
 
 export const parseUmlMethod = (line: string): UmlMethodInput => {

@@ -59,32 +59,46 @@ describe('AiService', () => {
     );
   });
 
-  it('infers agent mode for image input and parses JSON actions', async () => {
-    const callGeminiSpy = jest.spyOn(service as any, 'callGemini').mockResolvedValue(
-      JSON.stringify({
-        message: 'Listo',
-        actions: [
-          { type: 'create_class', data: { name: 'User' } },
-          { type: 'create_class', data: { name: 'Post', position: { x: 320, y: 80 } } },
-          { type: 'create_relationship', data: { type: 'composition', sourceName: 'User', targetName: 'Post', sourceMultiplicity: '1', targetMultiplicity: '*' } },
-        ],
-      }),
-    );
+  it('parses AGENT commands locally without calling Gemini', async () => {
+    const callGeminiSpy = jest.spyOn(service as any, 'callGemini');
     const saveInteractionSpy = jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
 
     const result = await service.chat('user-1', {
-      message: 'Crea la base de datos desde esta imagen',
-      attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'ZmFrZS1pbWFnZQ==' }],
+      message: 'crear clase User; crear relación User 1 -> * Post',
+      mode: ChatAiMode.AGENT,
+      diagramData: { elements: [{ id: 'post-id', name: 'Post' }] },
     } as any);
 
-    expect(callGeminiSpy).toHaveBeenCalled();
+    expect(callGeminiSpy).not.toHaveBeenCalled();
     const agentResult = result as any;
 
     expect(agentResult.mode).toBe(ChatAiMode.AGENT);
-    expect(agentResult.actions).toHaveLength(3);
+    expect(agentResult.actions).toHaveLength(2);
     expect(agentResult.actions[0].data.id).toBeDefined();
     expect(agentResult.actions[0].data.position).toEqual({ x: 100, y: 100 });
     expect(saveInteractionSpy).toHaveBeenCalledWith('user-1', null, AIInteractionType.AGENT, expect.any(String), expect.any(String));
+  });
+
+  it('keeps ASK requests on the Gemini path', async () => {
+    const callGeminiSpy = jest.spyOn(service as any, 'callGemini').mockResolvedValue('Respuesta general');
+    jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
+
+    const result = await service.chat('user-1', { message: '¿Qué es una interfaz?', mode: ChatAiMode.ASK } as any);
+
+    expect(callGeminiSpy).toHaveBeenCalled();
+    expect(result).toEqual({ success: true, message: 'Respuesta general', mode: ChatAiMode.ASK });
+  });
+
+  it('keeps diagram questions on the Gemini path', async () => {
+    const callGeminiSpy = jest.spyOn(service as any, 'callGemini').mockResolvedValue('Una asociación representa una relación.');
+    jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
+
+    await expect(service.chat('user-1', {
+      message: '¿Qué representa esta relación?',
+      diagramData: { elements: [], connections: [] },
+    } as any)).resolves.toMatchObject({ success: true, mode: ChatAiMode.ASK });
+
+    expect(callGeminiSpy).toHaveBeenCalled();
   });
 
   it('returns diagram chat messages in chronological order', async () => {

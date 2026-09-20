@@ -11,5 +11,6 @@ import { UserEntity } from 'src/users/entities/user.entity';
   imports: [TypeOrmModule.forFeature([AIInteractionEntity, UserEntity])],
   controllers: [AiController],
   providers: [AiService, JwtAuthGuard],
+  exports: [AiService],
 })
 export class AiModule {}

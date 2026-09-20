@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { AIInteractionEntity } from './entities/ai-interaction.entity';
 import { AIInteractionType } from './enums/ai-interaction-type.enum';
 import { ChatAiAttachmentDto, ChatAiDto, ChatAiMode } from './dto/chat-ai.dto';
+import { parseDiagramCommands } from './diagram-command-parser';
 
 type GeminiPart = {
   text?: string;
@@ -184,8 +185,7 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
   private inferMode(payload: ChatAiDto) {
     if (payload.mode) return payload.mode;
 
-    const hasStructuredInput = Boolean(payload.diagramData || payload.sourceText?.trim() || (payload.attachments?.length ?? 0) > 0);
-    if (hasStructuredInput) return ChatAiMode.AGENT;
+    if (payload.sourceText?.trim() || (payload.attachments?.length ?? 0) > 0) return ChatAiMode.ASK;
 
     const agentKeywords = /(crear|generar|diseñar|construir|corregir|modificar|actualizar|renombrar|relacion|tabla|atributo|campo|documento|imagen|esquema|base de datos)/i;
     if (agentKeywords.test(payload.message || '')) return ChatAiMode.AGENT;
@@ -363,7 +363,7 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
     return content;
   }
 
-  private async callGemini(systemPrompt: string, userParts: GeminiPart[]) {
+  async callGemini(systemPrompt: string, userParts: GeminiPart[]) {
     this.initialize();
 
     if (!this.apiKey) {
@@ -480,15 +480,22 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
     }
 
     const mode = this.inferMode(payload);
+
+    if (mode === ChatAiMode.AGENT) {
+      const result = parseDiagramCommands(payload.message, payload.diagramData as any);
+      await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.AGENT, payload.message, result.message);
+      return { success: result.success, message: result.message, mode: ChatAiMode.AGENT, actions: result.actions };
+    }
+
     const systemPrompt = this.systemPrompts[mode] || this.systemPrompts.ask;
     const context = this.buildContext(payload.diagramData, payload.conversationHistory || [], payload.sourceText || null, payload.attachments || []);
     const userParts = this.buildUserParts(payload, context);
 
     try {
       const aiResponse = await this.callGemini(systemPrompt, userParts);
-      const processedResponse = mode === ChatAiMode.AGENT ? this.processAgentResponse(aiResponse) : { message: aiResponse, mode: ChatAiMode.ASK };
+      const processedResponse = { message: aiResponse, mode: ChatAiMode.ASK };
 
-      await this.saveInteraction(userId, payload.diagramId || null, mode === ChatAiMode.AGENT ? AIInteractionType.AGENT : AIInteractionType.ASK, payload.message, aiResponse);
+      await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.ASK, payload.message, aiResponse);
 
       return { success: true, ...processedResponse };
     } catch (error: any) {

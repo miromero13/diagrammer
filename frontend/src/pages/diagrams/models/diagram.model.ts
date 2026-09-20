@@ -1,3 +1,18 @@
+export type UmlVisibility = '' | '+' | '-' | '#' | '~'
+
+export interface UmlMemberSemantics {
+  visibility?: UmlVisibility
+  isStatic?: boolean
+  isAbstract?: boolean
+  isDerived?: boolean
+  defaultValue?: string
+}
+
+export interface UmlWayPoint {
+  x: number
+  y: number
+}
+
 export interface DiagramContent {
   elements?: Array<{
     id?: string
@@ -5,6 +20,9 @@ export interface DiagramContent {
     name?: string
     attributes?: string[]
     methods?: string[]
+    attributeSemantics?: UmlMemberSemantics[]
+    methodSemantics?: UmlMemberSemantics[]
+    isAbstract?: boolean
     literals?: string[]
     position?: { x: number; y: number }
     size?: { width: number; height: number }
@@ -20,6 +38,13 @@ export interface DiagramContent {
     associationClassLink?: boolean
     sourceMultiplicity?: string
     targetMultiplicity?: string
+    sourceRoleName?: string
+    targetRoleName?: string
+    sourceNavigable?: boolean
+    targetNavigable?: boolean
+    stereotype?: string
+    usage?: string
+    waypoints?: UmlWayPoint[]
   }>
   metadata?: Record<string, unknown>
 }

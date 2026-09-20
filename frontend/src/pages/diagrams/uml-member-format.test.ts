@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatUmlAttribute, formatUmlMethod, parseUmlAttribute, parseUmlMethod, validateUmlAttributes, validateUmlMethods } from './uml-member-format'
+import { formatUmlAttribute, formatUmlAttributeLabel, formatUmlMethod, formatUmlMethodLabel, parseUmlAttribute, parseUmlMethod, validateUmlAttributes, validateUmlMethods } from './uml-member-format'
 
 describe('UML member format', () => {
   it('allows optional attribute types and typed methods', () => {
@@ -16,8 +16,20 @@ describe('UML member format', () => {
   })
 
   it('turns structured fields into the XMI-compatible UML notation', () => {
-    expect(formatUmlAttribute(parseUmlAttribute('-name: String [1]'))).toBe('name: String [1]')
-    expect(formatUmlMethod(parseUmlMethod('+setStatus(value: Status): Status'))).toBe('setStatus(value: Status): Status')
+    expect(formatUmlAttribute(parseUmlAttribute('-name: String [1]'))).toBe('-name: String [1]')
+    expect(formatUmlMethod(parseUmlMethod('+setStatus(value: Status): Status'))).toBe('+setStatus(value: Status): Status')
+  })
+
+  it('parses and renders member semantics without changing the stored base string', () => {
+    const attribute = parseUmlAttribute('-/total: Decimal [1] = 0 {static}')
+    const method = parseUmlMethod('#calculate(): Decimal {abstract, static}')
+
+    expect(attribute).toMatchObject({ visibility: '-', name: 'total', isDerived: true, isStatic: true, defaultValue: '0' })
+    expect(method).toMatchObject({ visibility: '#', name: 'calculate', isAbstract: true, isStatic: true })
+    expect(formatUmlAttribute(attribute)).toBe('-total: Decimal [1]')
+    expect(formatUmlMethod(method)).toBe('#calculate(): Decimal')
+    expect(formatUmlAttributeLabel(attribute)).toBe('-/total: Decimal [1] = 0 {static}')
+    expect(formatUmlMethodLabel(method)).toBe('#calculate(): Decimal {static, abstract}')
   })
 
   it('keeps newly added placeholder members parseable', () => {

@@ -78,7 +78,7 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               <Shapes className="h-4 w-4 text-muted-foreground" />
               Elementos
             </h3>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {([['class', 'Clase'], ['enum', 'Enum'], ['interface', 'Interfaz'], ['abstract', 'Clase abstracta']] as const).map(([kind, label]) => (
                 <Button key={kind} size="sm" variant={tool === kind ? 'default' : 'outline'} aria-label={label} className="h-auto w-full justify-center px-2 py-2" onClick={() => {
                   onToolChange(kind)
@@ -95,7 +95,7 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               <Link2 className="h-4 w-4 text-muted-foreground" />
               Relaciones
             </h3>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {RELATIONS.map((relation) => (
                 <Button
                   key={relation}

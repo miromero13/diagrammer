@@ -42,6 +42,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - [x] UMLSP-5: Commit only feature files and record evidence.
 - [x] UMLSP-6: Make the palette content scrollable and render item names as cards.
 - [x] UMLSP-7: Show only visual previews while retaining accessible names.
+- [x] UMLSP-8: Use a two-column palette grid that collapses to one column on small screens.
 
 ## Acceptance Checks
 
@@ -52,6 +53,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - The palette scrolls when its content exceeds the sidebar height.
 - Every preview label is displayed in its own card.
 - Palette items show only their UML previews and retain accessible names.
+- Palette grids use one column on small screens and two columns from the `sm` breakpoint.
 
 ## Verification
 
@@ -64,6 +66,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - Sidebar refinement build: `npm run build` — observed 2026-09-20: passed.
 - Sidebar refinement diff check: `git diff --check` — observed 2026-09-20: passed.
 - Preview-only refinement: `npm test -- --run src/pages/diagrams/components/diagram-elements-sidebar.test.tsx` — observed 2026-09-20: 1 file, 9 tests passed.
+- Responsive grid refinement: `npm test -- --run src/pages/diagrams/components/diagram-elements-sidebar.test.tsx` — observed 2026-09-20: 1 file, 9 tests passed.
 
 ## Review Assessment
 
@@ -80,6 +83,7 @@ Current: completed.
 - Staged scope: only the sidebar implementation, its focused test, and this task document.
 - Sidebar refinement commit: `fix(diagrams): make sidebar palette scrollable` (SHA reported with delivery).
 - Preview-only refinement commit: SHA reported with delivery.
+- Responsive grid refinement commit: SHA reported with delivery.
 
 ## Next Step
 

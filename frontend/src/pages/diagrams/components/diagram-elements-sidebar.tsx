@@ -1,4 +1,4 @@
-import { Layers, Link2, Plus, Shapes, Workflow } from 'lucide-react'
+import { Layers, Link2, Shapes } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -80,12 +80,11 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
             </h3>
             <div className="space-y-2">
               {([['class', 'Clase'], ['enum', 'Enum'], ['interface', 'Interfaz'], ['abstract', 'Clase abstracta']] as const).map(([kind, label]) => (
-                <Button key={kind} size="sm" variant={tool === kind ? 'default' : 'outline'} className="h-auto w-full justify-start gap-2 px-2 py-1.5" onClick={() => {
+                <Button key={kind} size="sm" variant={tool === kind ? 'default' : 'outline'} aria-label={label} className="h-auto w-full justify-center px-2 py-2" onClick={() => {
                   onToolChange(kind)
                   onAddNode(kind)
                 }}>
                   <UmlElementPreview kind={kind} />
-                  <span className="flex flex-1 items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-left shadow-sm"><Plus className="h-3.5 w-3.5" />{label}</span>
                 </Button>
               ))}
             </div>
@@ -102,13 +101,13 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
                   key={relation}
                   size="sm"
                   variant={tool === relation ? 'default' : 'outline'}
-                  className="h-auto w-full justify-start gap-2 px-2 py-1.5"
+                  aria-label={RELATION_LABELS[relation]}
+                  className="h-auto w-full justify-center px-2 py-2"
                   onClick={() => {
                     onToolChange(tool === relation ? 'select' : relation)
                   }}
                 >
                   <UmlRelationPreview relation={relation} />
-                  <span className="flex flex-1 items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-left shadow-sm"><Workflow className="h-3.5 w-3.5" />{RELATION_LABELS[relation]}</span>
                 </Button>
               ))}
             </div>

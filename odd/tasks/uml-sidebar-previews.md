@@ -41,6 +41,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - [x] UMLSP-4: Run focused checks, frontend build, and diff validation.
 - [x] UMLSP-5: Commit only feature files and record evidence.
 - [x] UMLSP-6: Make the palette content scrollable and render item names as cards.
+- [x] UMLSP-7: Show only visual previews while retaining accessible names.
 
 ## Acceptance Checks
 
@@ -50,6 +51,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - Existing creation behavior is unchanged.
 - The palette scrolls when its content exceeds the sidebar height.
 - Every preview label is displayed in its own card.
+- Palette items show only their UML previews and retain accessible names.
 
 ## Verification
 
@@ -61,6 +63,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - Sidebar refinement: `npm test -- --run src/pages/diagrams/components/diagram-elements-sidebar.test.tsx` — observed 2026-09-20: 1 file, 9 tests passed.
 - Sidebar refinement build: `npm run build` — observed 2026-09-20: passed.
 - Sidebar refinement diff check: `git diff --check` — observed 2026-09-20: passed.
+- Preview-only refinement: `npm test -- --run src/pages/diagrams/components/diagram-elements-sidebar.test.tsx` — observed 2026-09-20: 1 file, 9 tests passed.
 
 ## Review Assessment
 
@@ -76,6 +79,7 @@ Current: completed.
 - Work-unit commit: `feat(diagrams): preview UML sidebar palette items` (final SHA reported with delivery).
 - Staged scope: only the sidebar implementation, its focused test, and this task document.
 - Sidebar refinement commit: `fix(diagrams): make sidebar palette scrollable` (SHA reported with delivery).
+- Preview-only refinement commit: SHA reported with delivery.
 
 ## Next Step
 

@@ -42,6 +42,9 @@ const stepLabels: Record<string, string> = {
   GENERATING_SECURITY: 'Generando autenticación y seguridad'
 }
 
+const parseBootstrapNames = (value: string) =>
+  value.trim() ? value.split(',').map((name) => name.trim()) : []
+
 export const SpringbootGeneration = ({
   diagramId,
   saveDiagram,
@@ -54,6 +57,8 @@ export const SpringbootGeneration = ({
   const [principalClassId, setPrincipalClassId] = useState('')
   const [roleClassId, setRoleClassId] = useState('')
   const [permissionClassId, setPermissionClassId] = useState('')
+  const [bootstrapRoleNames, setBootstrapRoleNames] = useState('')
+  const [bootstrapPermissionNames, setBootstrapPermissionNames] = useState('')
   const [generationId, setGenerationId] = useState<string | null>(null)
   const [status, setStatus] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -96,6 +101,14 @@ export const SpringbootGeneration = ({
       setError('Seleccione una clase principal.')
       return
     }
+    const roleNames = roleClassId ? parseBootstrapNames(bootstrapRoleNames) : []
+    const permissionNames = permissionClassId
+      ? parseBootstrapNames(bootstrapPermissionNames)
+      : []
+    if ([...roleNames, ...permissionNames].some((name) => !name)) {
+      setError('Los nombres iniciales no pueden contener entradas vacías.')
+      return
+    }
     setError(null)
     try {
       await saveDiagram()
@@ -106,7 +119,8 @@ export const SpringbootGeneration = ({
           enabled: authentication,
           principalClassId,
           roleClassId,
-          permissionClassId
+          permissionClassId,
+          bootstrap: { roleNames, permissionNames }
         }
       })
       setGenerationId(response.generationId)
@@ -236,6 +250,36 @@ export const SpringbootGeneration = ({
                       </Select>
                     </label>
                   ))}
+                  {roleClassId && (
+                    <div className="space-y-1">
+                      <Label htmlFor="bootstrap-role-names">
+                        Nombres de roles iniciales
+                      </Label>
+                      <Input
+                        id="bootstrap-role-names"
+                        value={bootstrapRoleNames}
+                        onChange={(event) =>
+                          setBootstrapRoleNames(event.target.value)
+                        }
+                        placeholder="ADMIN, USER"
+                      />
+                    </div>
+                  )}
+                  {permissionClassId && (
+                    <div className="space-y-1">
+                      <Label htmlFor="bootstrap-permission-names">
+                        Nombres de permisos iniciales
+                      </Label>
+                      <Input
+                        id="bootstrap-permission-names"
+                        value={bootstrapPermissionNames}
+                        onChange={(event) =>
+                          setBootstrapPermissionNames(event.target.value)
+                        }
+                        placeholder="READ_USERS, WRITE_USERS"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

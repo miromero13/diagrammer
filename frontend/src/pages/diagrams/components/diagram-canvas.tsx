@@ -244,7 +244,7 @@ const UML_RELATION_CONFIG: Record<UmlRelation, { hasMultiplicity: boolean, sourc
 
 const getRelationSourceMultiplicity = (relationType: UmlRelation, value?: string | null) => {
   const config = UML_RELATION_CONFIG[relationType]
-  return config.sourceFixed ?? value?.trim() ?? '1'
+  return (config.sourceFixed ?? value?.trim()) || '1'
 }
 
 const getRelationTargetMultiplicity = (relationType: UmlRelation, value?: string | null) => {
@@ -271,26 +271,22 @@ const UmlMarkerDefs = ({ themeMode }: { themeMode?: 'light' | 'dark' }) => (
   </svg>
 )
 
-const getBadgePosition = (
+export const getBadgePosition = (
   x: number,
   y: number,
   position: Position,
-  sourceX: number,
-  targetX: number
 ) => {
-  const isGoingLeft = targetX < sourceX
-
   switch (position) {
     case Position.Top:
-      return { x: isGoingLeft ? x - 36 : x + 20, y: isGoingLeft ? y - 32 : y + 20 }
+      return { x: x + 21, y: y - 30 }
     case Position.Bottom:
-      return { x: isGoingLeft ? x - 22 : x + 26, y: y + 36 }
+      return { x: x + 21, y: y + 30 }
     case Position.Left:
-      return { x: x - 36, y: y + 16 }
+      return { x: x - 25, y: y - 22 }
     case Position.Right:
-      return { x: x + 36, y: y + 16 }
+      return { x: x + 25, y: y - 22 }
     default:
-      return { x: x + 20, y: y + 20 }
+      return { x, y }
   }
 }
 
@@ -317,8 +313,8 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
 
   const sourceMultiplicity = getRelationSourceMultiplicity(relationType, data?.sourceMultiplicity)
   const targetMultiplicity = getRelationTargetMultiplicity(relationType, data?.targetMultiplicity)
-  const sourceBadgePosition = getBadgePosition(sourceX, sourceY, sourcePosition, sourceX, targetX)
-  const targetBadgePosition = getBadgePosition(targetX, targetY, targetPosition, sourceX, targetX)
+  const sourceBadgePosition = getBadgePosition(sourceX, sourceY, sourcePosition)
+  const targetBadgePosition = getBadgePosition(targetX, targetY, targetPosition)
 
   return (
     <>

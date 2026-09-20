@@ -226,7 +226,7 @@ const relationMultiplicityMode = (relationType: UmlRelation): MultiplicityMode =
 
 const getRelationSourceMultiplicity = (relationType: UmlRelation, value?: string | null) => {
   const config = UML_RELATION_CONFIG[relationType]
-  return config.sourceFixed ?? value?.trim() ?? '1'
+  return (config.sourceFixed ?? value?.trim()) || '1'
 }
 
 const getRelationTargetMultiplicity = (relationType: UmlRelation, value?: string | null) => {

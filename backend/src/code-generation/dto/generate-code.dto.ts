@@ -20,6 +20,10 @@ export class GenerateCodeDto {
     principalClassId?: string;
     roleClassId?: string;
     permissionClassId?: string;
+    bootstrap?: {
+      roleNames: string[];
+      permissionNames: string[];
+    };
   };
 
   // Kept for clients of the old route; Phase 1 does not use these values.

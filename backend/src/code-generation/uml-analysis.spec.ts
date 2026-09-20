@@ -79,6 +79,21 @@ describe('UML analysis', () => {
     expect(analysis.elements[0].structuredAttributes.at(-1)).toMatchObject({ name: 'paidAt', visibility: '-', sourceType: 'char', javaType: 'String', multiplicity: { lower: 1, upper: 1 } });
   });
 
+  it('preserves and validates UML methods without treating them as attributes', () => {
+    const analysis = normalizeAndValidateUml({
+      elements: [{ id: 'order', type: 'uml.Class', name: 'Order', methods: ['+calculateTotal(items: List<Order>): Decimal', '-cancel(): void'] }],
+      connections: [],
+    });
+
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.elements[0].structuredMethods).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'calculateTotal', visibility: '+', sourceReturnType: 'Decimal', javaReturnType: 'BigDecimal', parameters: [expect.objectContaining({ name: 'items', sourceType: 'List<Order>', javaType: 'List<Order>' })] }),
+      expect.objectContaining({ name: 'cancel', visibility: '-', sourceReturnType: 'void', javaReturnType: 'Void' }),
+    ]));
+    expect(renderUmlAnalysis(analysis, { enabled: false })).toContain('## Métodos detectados');
+    expect(renderUmlAnalysis(analysis, { enabled: false })).toContain('+calculateTotal(items: List<Order>): Decimal');
+  });
+
   it('accepts empty relationship multiplicities and renders endpoints separately', () => {
     const analysis = normalizeAndValidateUml({ elements: [{ id: 'a', type: 'uml.Class', name: 'A' }, { id: 'b', type: 'uml.Class', name: 'B' }], connections: [{ id: 'ab', type: 'association', sourceId: 'a', targetId: 'b', sourceMultiplicity: '', targetMultiplicity: '' }] });
     expect(analysis.errors).toEqual([]);

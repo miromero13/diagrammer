@@ -207,7 +207,7 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
      } else if (['association', 'aggregation', 'composition'].includes(connection.type) && (!classLike(sourceKind) || !classLike(targetKind))) {
        errors.push(`La relación ${connection.type} ${connection.id} requiere clases o clases abstractas en ambos extremos`);
      }
-     if (connection.type === 'composition' && (connection.source.upper === null || connection.source.upper > 1)) errors.push(`La composición ${connection.id} no puede tener más de un composite propietario en el extremo origen`);
+     if (connection.type === 'composition' && text(raw?.sourceMultiplicity) && (connection.source.upper === null || connection.source.upper > 1)) errors.push(`La composición ${connection.id} no puede tener más de un composite propietario en el extremo origen`);
      if (connection.associationClassId && !classLike(classifierEndpoint(connection.associationClassId)?.kind)) errors.push(`La clase de asociación ${connection.associationClassId} no es una clase UML compatible`);
      if (raw) {
        connection.sourceRoleName = text(raw.sourceRoleName) || undefined; connection.targetRoleName = text(raw.targetRoleName) || undefined;

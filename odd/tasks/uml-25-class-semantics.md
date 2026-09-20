@@ -36,7 +36,7 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 - [x] UML25-3: Replace `enumUsage` handling with stereotyped dependency semantics while accepting legacy data.
 - [x] UML25-4: Add relationship endpoint, multiplicity, and composition/association semantic validation.
 - [x] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
-- [ ] UML25-6: Add focused regression tests and update task evidence.
+- [x] UML25-6: Add focused regression tests and update task evidence.
 - [ ] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
 
 ## Acceptance Criteria
@@ -60,8 +60,8 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-5 complete; enum usage is canonical `dependency` with `«use»`/`usage: enum`, reusable frontend/backend relationship validation reports endpoint, self-link, multiplicity, and composition errors, and XMI/UMLDI round-trips supported semantics and relationship waypoints.
+Current: UML25-6 complete; focused frontend XMI/member/relationship-validation tests and backend UML normalization/validation tests cover canonical abstract classes, member semantics, enum dependency compatibility, relationship semantics, and UMLDI waypoints.
 
 ## Next Step
 
-Next: add final regression evidence, run all requested checks/builds, and record focused work-unit commits.
+Next: run the complete requested checks/builds, record exact results, and close the task with commit evidence.

@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, ConnectionLineType, getSmoothStepPath, useReactFlow, type Connection, type Edge, type EdgeProps, type Node, type NodeProps, useEdgesState, useNodesState } from '@xyflow/react'
+import { Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, ConnectionLineType, getSmoothStepPath, useReactFlow, useUpdateNodeInternals, type Connection, type Edge, type EdgeProps, type Node, type NodeProps, useEdgesState, useNodesState } from '@xyflow/react'
 import { MousePointer2 } from 'lucide-react'
 
 import { AppConfig } from '@/config/app.config'
 
 import { socketManager } from '../socketManager'
+import { type HandleSide, type HandleSlots } from '../handle-distribution'
 
 type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
 type UmlRelation = 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
@@ -20,6 +21,7 @@ interface DiagramNodeData extends Record<string, unknown> {
   remoteSelectedColor?: string
   remoteSelectedLabel?: string
   remoteMovingColor?: string
+  handleSlots?: HandleSlots
 }
 
 interface DiagramEdgeData extends Record<string, unknown> {
@@ -32,6 +34,9 @@ interface DiagramEdgeData extends Record<string, unknown> {
   remoteSelectedLabel?: string
   remoteMovingColor?: string
   remoteMovingLabel?: string
+  parallelGroupSize?: number
+  parallelOrder?: number
+  parallelOffsetDirection?: number
 }
 
 type CollaborationUser = {
@@ -296,7 +301,19 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
   const isDark = data?.themeMode === 'dark'
   const isRemoteSelected = Boolean(data?.remoteSelectedColor)
   const isRemoteMoving = Boolean(data?.remoteMovingColor) && !selected && !isRemoteSelected
-  const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 12 })
+  const parallelOffset = ((data?.parallelOrder ?? 0) - ((data?.parallelGroupSize ?? 1) - 1) / 2) * 24 * (data?.parallelOffsetDirection ?? 1)
+  const distance = Math.hypot(targetX - sourceX, targetY - sourceY) || 1
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    centerX: (sourceX + targetX) / 2 - (targetY - sourceY) / distance * parallelOffset,
+    centerY: (sourceY + targetY) / 2 + (targetX - sourceX) / distance * parallelOffset,
+    borderRadius: 12,
+  })
   const associationClassPosition = data?.associationClassPosition as { x: number; y: number; width?: number } | undefined
   const associationClassPath = data?.associationClassId && !data.associationClassLink && associationClassPosition
     ? `M ${(sourceX + targetX) / 2} ${(sourceY + targetY) / 2} L ${associationClassPosition.x + (associationClassPosition.width ?? 260) / 2} ${associationClassPosition.y}`
@@ -415,6 +432,7 @@ const UmlEdge = ({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targe
 }
 
 const UmlNode = ({ id, data, selected }: NodeProps<Node<DiagramNodeData>>) => {
+  const updateNodeInternals = useUpdateNodeInternals()
   const isDark = data.themeMode === 'dark'
   const border = selected ? (isDark ? '#93c5fd' : '#2563eb') : data.kind === 'interface' ? (isDark ? '#818cf8' : '#4f46e5') : data.kind === 'abstract' ? (isDark ? '#c084fc' : '#9333ea') : data.kind === 'enum' ? (isDark ? '#34d399' : '#059669') : (isDark ? '#818cf8' : '#6366f1')
   const remoteBorder = data.remoteSelectedColor ?? border
@@ -425,6 +443,20 @@ const UmlNode = ({ id, data, selected }: NodeProps<Node<DiagramNodeData>>) => {
   const isRemotelySelected = Boolean(data.remoteSelectedColor)
   const isRemoteMoving = Boolean(data.remoteMovingColor) && !selected && !isRemotelySelected
   const handleStyle = { width: 6, height: 6, border: `1px solid ${border}`, background: 'transparent', borderRadius: 9999, opacity: 0 } as const
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, data.handleSlots, updateNodeInternals])
+  const renderHandles = (type: 'source' | 'target') => (Object.entries(data.handleSlots?.[type] ?? { top: 1, right: 1, bottom: 1, left: 1 }) as Array<[HandleSide, number]>).flatMap(([side, count]) =>
+    Array.from({ length: count }, (_, slot) => {
+      const offset = `${((slot + 1) / (count + 1)) * 100}%`
+      const position = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left }[side]
+      const style = side === 'top' || side === 'bottom'
+        ? { ...handleStyle, [side]: -6, left: offset }
+        : { ...handleStyle, [side]: -6, top: offset }
+      return <Handle key={`${type}-${side}-${slot}`} id={`${type}-${side}-${slot}`} type={type} position={position} style={style} />
+    })
+  )
 
   return (
     <div
@@ -450,17 +482,13 @@ const UmlNode = ({ id, data, selected }: NodeProps<Node<DiagramNodeData>>) => {
       }}
       onDoubleClick={() => { data.onEdit?.(id) }}
     >
-      <Handle type="target" position={Position.Top} style={{ ...handleStyle, top: -6 }} />
-      <Handle type="target" position={Position.Left} style={{ ...handleStyle, left: -6 }} />
-      <Handle type="target" position={Position.Right} style={{ ...handleStyle, right: -6 }} />
+      {renderHandles('target')}
       <div style={{ background: headerBg, color: textColor, padding: '10px 12px', fontFamily: 'JetBrains Mono', fontWeight: 600, fontSize: 12, textAlign: 'center' }}>
         {data.kind === 'interface' ? `<<interface>>\n${data.name}` : data.kind === 'abstract' ? `<<abstract>>\n${data.name}` : data.kind === 'enum' ? `<<enumeration>>\n${data.name}` : data.name}
       </div>
       {data.kind === 'enum' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#a7f3d0' : '#065f46', minHeight: 36 }}>{data.literals.length ? data.literals.map((literal) => <div key={literal}>{literal}</div>) : <div className="opacity-60">No literals</div>}</div> : data.kind !== 'interface' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.attributes.length ? data.attributes.map((attribute) => <div key={attribute}>{attribute}</div>) : <div className="opacity-60">No attributes</div>}</div> : null}
       {data.kind !== 'enum' ? <div style={{ borderTop: `1px solid ${border}`, padding: '8px 12px', fontFamily: 'JetBrains Mono', fontSize: 11, color: isDark ? '#cbd5e1' : data.kind === 'interface' ? '#312e81' : data.kind === 'abstract' ? '#581c87' : '#475569', minHeight: 36 }}>{data.methods.length ? data.methods.map((method) => <div key={method}>{method}</div>) : <div className="opacity-60">No methods</div>}</div> : null}
-      <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, bottom: -6 }} />
-      <Handle type="source" position={Position.Left} style={{ ...handleStyle, left: -6 }} />
-      <Handle type="source" position={Position.Right} style={{ ...handleStyle, right: -6 }} />
+      {renderHandles('source')}
     </div>
   )
 }

@@ -21,6 +21,7 @@ import { diagramsService } from './services/diagrams.service'
 import { diagramsAiService, type DiagramChatMessage, type DiagramChatConversationTurn } from './services/ai.service'
 import type { DiagramContent, DiagramDetailsResponse } from './models/diagram.model'
 import { materializeManyToMany } from './many-to-many'
+import { distributeHandles, type HandleSlots } from './handle-distribution'
 import { socketManager } from './socketManager'
 
 type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'enum' | 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
@@ -43,6 +44,7 @@ interface DiagramNodeData extends Record<string, unknown> {
   remoteSelectedColor?: string
   remoteSelectedLabel?: string
   remoteMovingColor?: string
+  handleSlots?: HandleSlots
 }
 
 interface DiagramEdgeData extends Record<string, unknown> {
@@ -58,6 +60,9 @@ interface DiagramEdgeData extends Record<string, unknown> {
   associationClassId?: string
   associationClassLink?: boolean
   associationClassPosition?: { x: number; y: number; width?: number }
+  parallelGroupSize?: number
+  parallelOrder?: number
+  parallelOffsetDirection?: number
 }
 
 type CollaborationUser = {
@@ -1691,6 +1696,8 @@ const DiagramFlow = () => {
     setRemoteMotionByElement(state)
   }, [])
 
+  const handleDistribution = useMemo(() => distributeHandles(nodes, edges), [nodes, edges])
+
   const flowNodes = useMemo(() => nodes.map((node) => ({
     ...node,
     selected: selectedNodeId === node.id,
@@ -1701,21 +1708,38 @@ const DiagramFlow = () => {
       remoteSelectedColor: selectionCollaborationStateById[node.id]?.color,
       remoteSelectedLabel: selectionCollaborationStateById[node.id]?.label,
       remoteMovingColor: !selectedNodeId && !selectionCollaborationStateById[node.id] ? remoteMotionStateById[node.id]?.color : undefined,
+      handleSlots: handleDistribution.nodeHandles[node.id],
     }
-  })), [nodes, openNodeEditor, selectedNodeId, themeMode, selectionCollaborationStateById, remoteMotionStateById])
+  })), [nodes, openNodeEditor, selectedNodeId, themeMode, selectionCollaborationStateById, remoteMotionStateById, handleDistribution])
 
   const flowEdges = useMemo(() => {
     const nodesById = new Map(nodes.map((node) => [node.id, node]))
+    const parallelEdges = new Map<string, typeof edges>()
+    edges.forEach((edge) => {
+      const key = [edge.source, edge.target].sort().join('\u0000')
+      parallelEdges.set(key, [...(parallelEdges.get(key) ?? []), edge])
+    })
+    const parallelLayout = new Map<string, { size: number; order: number }>()
+    parallelEdges.forEach((group) => group
+      .slice()
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .forEach((edge, order) => parallelLayout.set(edge.id, { size: group.length, order })))
     return edges.map((edge) => {
       const associationClass = edge.data?.associationClassId ? nodesById.get(edge.data.associationClassId) : undefined
+      const parallel = parallelLayout.get(edge.id)
       return {
         ...edge,
+        sourceHandle: handleDistribution.edgeHandles[edge.id]?.sourceHandle,
+        targetHandle: handleDistribution.edgeHandles[edge.id]?.targetHandle,
         selected: selectedEdgeId === edge.id,
         type: 'umlEdge',
         data: {
           ...edge.data,
           relationType: edge.data?.relationType ?? 'association',
           associationClassPosition: associationClass ? { x: associationClass.position.x, y: associationClass.position.y, width: associationClass.measured?.width ?? NODE_WIDTH } : undefined,
+          parallelGroupSize: parallel?.size,
+          parallelOrder: parallel?.order,
+          parallelOffsetDirection: edge.source.localeCompare(edge.target) < 0 ? 1 : -1,
           onEdit: openEdgeEditor,
           themeMode,
           remoteSelectedColor: selectionCollaborationStateById[edge.id]?.color,
@@ -1725,7 +1749,7 @@ const DiagramFlow = () => {
         },
       } as Edge<DiagramEdgeData>
     })
-  }, [edges, nodes, openEdgeEditor, remoteMotionStateById, selectedEdgeId, selectionCollaborationStateById, themeMode])
+  }, [edges, nodes, openEdgeEditor, remoteMotionStateById, selectedEdgeId, selectionCollaborationStateById, themeMode, handleDistribution])
 
   if (loading) return <div className="flex h-full min-h-0 items-center justify-center text-sm text-slate-500">Loading diagram...</div>
 

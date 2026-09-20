@@ -33,9 +33,9 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 - [x] UML25-1: Define a backward-compatible canonical model for classifier/member/relationship semantics.
 - [x] UML25-2: Update editor and canvas for abstract classifiers, visibility, member modifiers/defaults, roles, and navigability.
-- [ ] UML25-3: Replace `enumUsage` handling with stereotyped dependency semantics while accepting legacy data.
-- [ ] UML25-4: Add relationship endpoint, multiplicity, and composition/association semantic validation.
-- [ ] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
+- [x] UML25-3: Replace `enumUsage` handling with stereotyped dependency semantics while accepting legacy data.
+- [x] UML25-4: Add relationship endpoint, multiplicity, and composition/association semantic validation.
+- [x] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
 - [ ] UML25-6: Add focused regression tests and update task evidence.
 - [ ] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
 
@@ -60,8 +60,8 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-2 complete; the active editor/canvas now stores canonical abstract classifiers, edits member visibility/modifiers/default values, and edits/renders association roles and navigability. Legacy abstract names/types remain readable.
+Current: UML25-5 complete; enum usage is canonical `dependency` with `«use»`/`usage: enum`, reusable frontend/backend relationship validation reports endpoint, self-link, multiplicity, and composition errors, and XMI/UMLDI round-trips supported semantics and relationship waypoints.
 
 ## Next Step
 
-Next: canonicalize enum dependencies, add reusable relationship validation, and complete XMI/UMLDI round-trip.
+Next: add final regression evidence, run all requested checks/builds, and record focused work-unit commits.

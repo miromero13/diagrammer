@@ -213,4 +213,44 @@ describe('UML analysis', () => {
     expect(analysis.relationalModel.relationships[0].foreignKeys).toEqual([]);
     expect(analysis.structuredWarnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'UML_RELATIONSHIP_AMBIGUOUS', severity: 'warning', originalValue: '|' })]));
   });
+
+  it('normalizes optional member semantics and canonicalizes legacy enum usage', () => {
+    const analysis = normalizeAndValidateUml({
+      elements: [
+        { id: 'status', type: 'uml.Enumeration', name: 'Status', literals: ['ACTIVE'] },
+        { id: 'user', type: 'uml.Class', name: 'User', attributes: ['-/total: int = 0 {static}'], methods: ['#reset(): void {abstract, static}'] },
+      ],
+      connections: [{ id: 'uses-status', type: 'enumUsage', sourceId: 'status', targetId: 'user' }],
+    });
+
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.elements.find((element) => element.id === 'user')?.structuredAttributes[0]).toMatchObject({ isStatic: true, isDerived: true, defaultValue: '0' });
+    expect(analysis.elements.find((element) => element.id === 'user')?.structuredMethods[0]).toMatchObject({ isStatic: true, isAbstract: true });
+    expect(analysis.connections[0]).toMatchObject({ type: 'dependency', usage: 'enum', stereotype: 'use', sourceId: 'user', targetId: 'status' });
+  });
+
+  it('reports actionable relationship endpoint, self-link, multiplicity, and composition errors', () => {
+    const analysis = normalizeAndValidateUml({
+      elements: [
+        { id: 'class', type: 'uml.Class', name: 'Class' },
+        { id: 'interface', type: 'uml.Interface', name: 'Contract' },
+        { id: 'enum', type: 'uml.Enumeration', name: 'Status', literals: ['ACTIVE'] },
+      ],
+      connections: [
+        { id: 'bad-association', type: 'association', sourceId: 'class', targetId: 'enum' },
+        { id: 'bad-implementation', type: 'implementation', sourceId: 'interface', targetId: 'class' },
+        { id: 'self', type: 'association', sourceId: 'class', targetId: 'class' },
+        { id: 'bad-multiplicity', type: 'association', sourceId: 'class', targetId: 'interface', sourceMultiplicity: '2..1' },
+        { id: 'bad-composition', type: 'composition', sourceId: 'class', targetId: 'class', sourceMultiplicity: '0..*' },
+      ],
+    });
+
+    expect(analysis.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('requiere clases o clases abstractas'),
+      expect.stringContaining('requiere una clase concreta y una interfaz'),
+      expect.stringContaining('no puede conectar una clase consigo misma'),
+      expect.stringContaining('multiplicidad inválida'),
+      expect.stringContaining('composición'),
+    ]));
+  });
 });

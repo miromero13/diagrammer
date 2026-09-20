@@ -24,6 +24,7 @@ import { parseUmlAttribute, parseUmlMethod } from './uml-member-format'
 import { materializeManyToMany } from './many-to-many'
 import { distributeHandles, type HandleSlots } from './handle-distribution'
 import { socketManager } from './socketManager'
+import { validateUmlRelationship } from './uml-relationship-validation'
 
 type Tool = 'select' | 'class' | 'interface' | 'abstract' | 'enum' | 'association' | 'dependency' | 'enumUsage' | 'inheritance' | 'implementation' | 'composition' | 'aggregation'
 type UmlKind = 'class' | 'interface' | 'abstract' | 'enum'
@@ -521,12 +522,22 @@ const DiagramFlow = () => {
   const isRelationTool = (value: Tool) => value === 'association' || value === 'dependency' || value === 'enumUsage' || value === 'inheritance' || value === 'implementation' || value === 'composition' || value === 'aggregation'
 
   const buildEdge = useCallback((sourceId: string, targetId: string) => {
-    if (!sourceId || !targetId || sourceId === targetId) return null
+    if (!sourceId || !targetId) return null
+    if (sourceId === targetId) {
+      setError('Una relación no puede conectar un elemento consigo mismo.')
+      return null
+    }
 
     const rawRelationType = isRelationTool(tool) ? tool : 'association'
     const relationType = normalizeRelationType(rawRelationType)
     const enumUsage = rawRelationType === 'enumUsage' || relationType === 'dependency' && [sourceId, targetId].some((id) => nodesRef.current.find((node) => node.id === id)?.data.kind === 'enum')
     const endpoints = normalizeEnumUsageEndpoints(relationType, { source: sourceId, target: targetId }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])), enumUsage)
+    const sourceNode = nodesRef.current.find((node) => node.id === endpoints.source), targetNode = nodesRef.current.find((node) => node.id === endpoints.target)
+    const validationError = validateUmlRelationship({ type: relationType, sourceId: endpoints.source, targetId: endpoints.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity: UML_RELATION_CONFIG[relationType].sourceFixed ?? '1', targetMultiplicity: UML_RELATION_CONFIG[relationType].hasMultiplicity ? '1' : '' })[0]
+    if (validationError) {
+      setError(validationError)
+      return null
+    }
     const config = UML_RELATION_CONFIG[relationType]
 
     return {
@@ -543,7 +554,7 @@ const DiagramFlow = () => {
         onEdit: openEdgeEditor,
       },
     } as Edge<DiagramEdgeData>
-  }, [tool])
+  }, [setError, tool])
 
 
   const deleteSelection = () => {
@@ -1624,10 +1635,17 @@ const DiagramFlow = () => {
       }))
       if (AppConfig.COLLABORATION_ENABLED && updatedNode) socketManager.updateElement(editorId, serializeNodeForCollaboration(updatedNode))
     } else {
-      pushHistory()
       const sourceMultiplicity = getRelationSourceMultiplicity(editorRelationType, editorSourceMultiplicity)
       const targetMultiplicity = getRelationTargetMultiplicity(editorRelationType, editorTargetMultiplicity)
       const currentEdge = edges.find((edge) => edge.id === editorId)
+      const sourceNode = currentEdge ? nodes.find((node) => node.id === currentEdge.source) : undefined
+      const targetNode = currentEdge ? nodes.find((node) => node.id === currentEdge.target) : undefined
+      const validationError = currentEdge ? validateUmlRelationship({ type: normalizeRelationType(currentEdge.data?.relationType ?? editorRelationType), sourceId: currentEdge.source, targetId: currentEdge.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity, targetMultiplicity })[0] : undefined
+      if (validationError) {
+        setError(validationError)
+        return
+      }
+      pushHistory()
       const updatedEdge = currentEdge ? ({
         ...currentEdge,
         data: {

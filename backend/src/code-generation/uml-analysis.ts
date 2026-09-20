@@ -19,6 +19,10 @@ export type UmlAttribute = {
   sourceType: string;
   javaType: string;
   multiplicity: UmlMultiplicity;
+  isStatic?: boolean;
+  isAbstract?: boolean;
+  isDerived?: boolean;
+  defaultValue?: string;
 };
 
 export type UmlMethod = {
@@ -28,6 +32,8 @@ export type UmlMethod = {
   parameters: Array<{ name: string; sourceType: string; javaType: string }>;
   sourceReturnType: string;
   javaReturnType: string;
+  isStatic?: boolean;
+  isAbstract?: boolean;
 };
 
 export type UmlElement = {
@@ -47,6 +53,9 @@ export type UmlConnection = {
   id: string; type: string; sourceId: string; sourceName: string; targetId: string; targetName: string;
   sourceMultiplicity: string; targetMultiplicity: string; source: UmlMultiplicity; target: UmlMultiplicity;
   associationClassId?: string; associationClass?: Record<string, unknown>;
+  sourceRoleName?: string; targetRoleName?: string;
+  sourceNavigable?: boolean; targetNavigable?: boolean;
+  stereotype?: string; usage?: string;
 };
 
 export type RelationalColumn = {
@@ -92,24 +101,29 @@ const primitiveTypes = new Set(['string', 'str', 'text', 'char', 'character', 'i
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const className = (value: unknown) => text(value).replace(/<<(?:interface|abstract|enumeration|enum)>>/gi, '').trim();
 const endpoint = (value: unknown) => typeof value === 'object' && value !== null ? text((value as { id?: unknown }).id) : text(value);
-const relationType = (value: unknown) => ({ association: 'association', aggregation: 'aggregation', composition: 'composition', inheritance: 'inheritance', implementation: 'implementation', dependency: 'dependency', enumusage: 'enumUsage' }[text(value).toLowerCase()] || text(value).toLowerCase() || 'association');
+const relationType = (value: unknown) => ({ association: 'association', aggregation: 'aggregation', composition: 'composition', inheritance: 'inheritance', implementation: 'implementation', dependency: 'dependency', enumusage: 'dependency' }[text(value).toLowerCase()] || text(value).toLowerCase() || 'association');
 const parseMultiplicity = (value: unknown): UmlMultiplicity => {
   const raw = text(value); if (!raw) return { lower: null, upper: null }; if (raw === '*') return { lower: 0, upper: null };
   if (raw.includes('..')) { const [lower, upper] = raw.split('..'); return { lower: Number(lower), upper: upper === '*' ? null : Number(upper) }; }
   return { lower: Number(raw), upper: Number(raw) };
 };
 const multiplicityText = ({ lower, upper }: UmlMultiplicity) => lower === null ? '' : lower === upper ? String(lower) : `${lower}..${upper === null ? '*' : upper}`;
+const parseDecoration = (value: string) => {
+  const modifierMatch = value.match(/\s*\{([^}]+)\}\s*$/), modifiers = modifierMatch?.[1].split(',').map((item) => item.trim().toLowerCase()) ?? [];
+  const defaultMatch = value.match(/\s*=\s*(.*?)\s*(?:\{[^}]+\})?$/);
+  return { source: value.replace(/\s*=\s*.*?(?=\s*\{[^}]+\}\s*$|$)/, '').replace(/\s*\{[^}]+\}\s*$/, '').trim(), isStatic: modifiers.includes('static'), isAbstract: modifiers.includes('abstract'), isDerived: /^[-+~#]?\s*\//.test(value), defaultValue: defaultMatch?.[1]?.trim() || undefined };
+};
 const parseAttribute = (value: unknown) => {
-  const source = text(value), match = source.match(/^([+\-#~])?\s*([A-Za-z_$][\w$]*)(?:\s*:\s*([^\[]+?)|\s+([^\[]+?))?\s*(?:\[([^\]]+)\])?$/);
+  const decorated = parseDecoration(text(value)), source = decorated.source, match = source.match(/^([+\-#~])?\s*(\/)?\s*([A-Za-z_$][\w$]*)(?:\s*:\s*([^\[]+?)|\s+([^\[]+?))?\s*(?:\[([^\]]+)\])?$/);
   if (!match) return null;
-  return { name: match[2], visibility: match[1] || null, sourceType: text(match[3] || match[4] || 'String'), multiplicity: parseMultiplicity(match[5] || '') };
+  return { name: match[3], visibility: match[1] || null, sourceType: text(match[4] || match[5] || 'String'), multiplicity: parseMultiplicity(match[6] || ''), isStatic: decorated.isStatic, isAbstract: decorated.isAbstract, isDerived: Boolean(match[2]) || decorated.isDerived, defaultValue: decorated.defaultValue };
 };
 const parseMethod = (value: unknown) => {
-  const source = text(value), match = source.match(/^([+\-#~])?\s*([A-Za-z_$][\w$]*)\s*\((.*)\)\s*(?::\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?))?$/);
+  const decorated = parseDecoration(text(value)), source = decorated.source, match = source.match(/^([+\-#~])?\s*(\/)?\s*([A-Za-z_$][\w$]*)\s*\((.*)\)\s*(?::\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?))?$/);
   if (!match) return null;
-  const parameters = match[3].trim() ? match[3].split(',').map((parameter) => parameter.trim().match(/^([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?)$/)).filter((parameter): parameter is RegExpMatchArray => Boolean(parameter)) : [];
-  if (match[3].trim() && parameters.length !== match[3].split(',').length) return null;
-  return { name: match[2], visibility: match[1] || null, parameters: parameters.map((parameter) => ({ name: parameter[1], sourceType: parameter[2] })), sourceReturnType: match[4] || 'void' };
+  const parameters = match[4].trim() ? match[4].split(',').map((parameter) => parameter.trim().match(/^([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?)$/)).filter((parameter): parameter is RegExpMatchArray => Boolean(parameter)) : [];
+  if (match[4].trim() && parameters.length !== match[4].split(',').length) return null;
+  return { name: match[3], visibility: match[1] || null, parameters: parameters.map((parameter) => ({ name: parameter[1], sourceType: parameter[2] })), sourceReturnType: match[5] || 'void', isStatic: decorated.isStatic, isAbstract: decorated.isAbstract };
 };
 const javaType = (sourceType: string) => {
   const compact = sourceType.replace(/\s/g, ''), base = compact.toLowerCase();
@@ -145,20 +159,63 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
       const canonicalName = canonicalAttribute(parsed.name), suggestion = canonicalName === parsed.name ? undefined : canonicalName;
       if (suggestion) warn({ code: 'UML_ATTRIBUTE_TYPO', severity: 'warning', element: name, attribute: parsed.name, originalValue: parsed.name, canonicalSuggestion: suggestion, message: `El atributo ${parsed.name} en ${name} parece sospechoso; sugerencia: ${suggestion}.` });
       if (['paidat', 'createdat'].includes(parsed.name.toLowerCase())) { const correction = parsed.name.toLowerCase() === 'paidat' ? 'date' : 'datetime'; warn({ code: 'UML_ATTRIBUTE_TYPE_SUSPECT', severity: 'warning', element: name, attribute: parsed.name, originalValue: parsed.sourceType, canonicalSuggestion: correction, message: `El tipo de ${parsed.name} en ${name} parece sospechoso; sugerencia: ${correction}.` }); }
-      structuredAttributes.push({ name: parsed.name, sourceName: parsed.name, canonicalName, visibility: parsed.visibility, sourceType: parsed.sourceType, javaType: javaType(parsed.sourceType), multiplicity: parsed.multiplicity }); return `${parsed.visibility || ''}${parsed.name}: ${parsed.sourceType}`;
+       const semantic = Array.isArray(raw?.attributeSemantics) && raw.attributeSemantics[attributeIndex] && typeof raw.attributeSemantics[attributeIndex] === 'object' ? raw.attributeSemantics[attributeIndex] : {};
+       structuredAttributes.push({ name: parsed.name, sourceName: parsed.name, canonicalName, visibility: parsed.visibility, sourceType: parsed.sourceType, javaType: javaType(parsed.sourceType), multiplicity: parsed.multiplicity, isStatic: semantic.isStatic ?? parsed.isStatic, isAbstract: semantic.isAbstract ?? parsed.isAbstract, isDerived: semantic.isDerived ?? parsed.isDerived, defaultValue: semantic.defaultValue ?? parsed.defaultValue }); return `${parsed.visibility || ''}${parsed.name}: ${parsed.sourceType}`;
     });
     const structuredMethods: UmlMethod[] = [], methods = (Array.isArray(raw?.methods) ? raw.methods : []).map((method: unknown, methodIndex: number) => {
       const parsed = parseMethod(method); if (!parsed) { errors.push(`Método inválido en ${name || id}: ${text(method) || methodIndex + 1}`); return text(method); }
       const types = [parsed.sourceReturnType, ...parsed.parameters.map((parameter) => parameter.sourceType)];
       types.forEach((type) => { const compact = type.replace(/\s/g, '').replace(/\[\]$/, ''), generic = compact.match(/^[a-z]+<(.+)>$/i)?.[1], valid = primitiveTypes.has(compact.toLowerCase()) || names.has(compact.toLowerCase()) || (['list', 'set', 'map', 'array'].includes(compact.split('<')[0].toLowerCase()) && (!generic || primitiveTypes.has(generic.toLowerCase()) || names.has(generic.toLowerCase()))); if (!valid) errors.push(`Tipo de método desconocido en ${name || id}: ${type}`); });
-      structuredMethods.push({ name: parsed.name, sourceName: parsed.name, visibility: parsed.visibility, parameters: parsed.parameters.map((parameter) => ({ ...parameter, javaType: javaType(parameter.sourceType) })), sourceReturnType: parsed.sourceReturnType, javaReturnType: javaType(parsed.sourceReturnType) });
+       const semantic = Array.isArray(raw?.methodSemantics) && raw.methodSemantics[methodIndex] && typeof raw.methodSemantics[methodIndex] === 'object' ? raw.methodSemantics[methodIndex] : {};
+       structuredMethods.push({ name: parsed.name, sourceName: parsed.name, visibility: parsed.visibility, parameters: parsed.parameters.map((parameter) => ({ ...parameter, javaType: javaType(parameter.sourceType) })), sourceReturnType: parsed.sourceReturnType, javaReturnType: javaType(parsed.sourceReturnType), isStatic: semantic.isStatic ?? parsed.isStatic, isAbstract: semantic.isAbstract ?? parsed.isAbstract });
       return `${parsed.visibility || ''}${parsed.name}(${parsed.parameters.map((parameter) => `${parameter.name}: ${parameter.sourceType}`).join(', ')}): ${parsed.sourceReturnType}`;
     });
     elements.push({ id, name, kind, attributes, structuredAttributes, methods, structuredMethods, literals: [], ...(persistible ? { persistible } : {}), ...(raw.metadata ? { metadata: raw.metadata } : {}) });
   });
   const elementById = new Map(elements.map((element) => [element.id, element]));
   const connections: UmlConnection[] = rawConnections.map((raw: any, index) => { const id = text(raw?.id) || `connection-${index + 1}`, sourceId = text(raw?.sourceId) || endpoint(raw?.source), targetId = text(raw?.targetId) || endpoint(raw?.target), type = relationType(raw?.type), sourceMultiplicity = text(raw?.sourceMultiplicity), targetMultiplicity = text(raw?.targetMultiplicity), source = parseMultiplicity(sourceMultiplicity), target = parseMultiplicity(targetMultiplicity); if (!relationTypes.has(type)) errors.push(`Tipo de relación no compatible: ${type}`); if (!sourceId || !ids.has(sourceId)) errors.push(`La relación ${id} tiene un origen inválido`); if (!targetId || !ids.has(targetId)) errors.push(`La relación ${id} tiene un destino inválido`); if (sourceId === targetId) errors.push(`La relación ${id} no puede conectar una clase consigo misma`); [sourceMultiplicity, targetMultiplicity].forEach((multiplicity, endpointIndex) => { if (multiplicity && !/^(?:\d+|\d+\.\.\*|\d+\.\.\d+|\*)$/.test(multiplicity)) errors.push(`Multiplicidad de ${endpointIndex ? 'destino' : 'origen'} inválida en la relación ${id}: ${multiplicity}`); }); const associationClassId = text(raw?.associationClassId) || text(raw?.associationClass?.id), associationClass = raw?.associationClass && typeof raw.associationClass === 'object' ? { ...raw.associationClass } : undefined; return { id, type, sourceId, sourceName: elementById.get(sourceId)?.name || '', targetId, targetName: elementById.get(targetId)?.name || '', sourceMultiplicity: multiplicityText(source), targetMultiplicity: multiplicityText(target), source, target, ...(associationClassId ? { associationClassId } : {}), ...(associationClass ? { associationClass } : {}) }; });
-  const inheritance = connections.filter((c) => c.type === 'inheritance'), inheritedIds = new Set(inheritance.map((c) => c.targetId));
+   const classifierEndpoint = (id: string) => elementById.get(id);
+   const multiplicityIsInvalid = (value: string, parsed: UmlMultiplicity) => {
+     if (!value) return false;
+     if (!/^(?:\d+|\d+\.\.(?:\d+|\*)|\*)$/.test(value)) return true;
+     if (parsed.lower !== null && parsed.lower < 0) return true;
+     return parsed.upper !== null && parsed.lower !== null && parsed.upper < parsed.lower;
+   };
+   connections.forEach((connection) => {
+     const raw = rawConnections.find((item: any) => text(item?.id) === connection.id) as any;
+     const legacyEnumUsage = text(raw?.type).toLowerCase() === 'enumusage';
+     if (legacyEnumUsage || text(raw?.usage).toLowerCase() === 'enum' || text(raw?.stereotype).toLowerCase() === 'use') {
+       connection.usage = 'enum'; connection.stereotype = 'use';
+       if (classifierEndpoint(connection.sourceId)?.kind === 'enum' && classifierEndpoint(connection.targetId)?.kind !== 'enum') {
+         [connection.sourceId, connection.targetId] = [connection.targetId, connection.sourceId];
+         [connection.sourceName, connection.targetName] = [connection.targetName, connection.sourceName];
+         [connection.source, connection.target] = [connection.target, connection.source];
+       }
+     }
+     if (!classifierEndpoint(connection.sourceId)) errors.push(`La relación ${connection.id} tiene un origen que no es un clasificador UML compatible`);
+     if (!classifierEndpoint(connection.targetId)) errors.push(`La relación ${connection.id} tiene un destino que no es un clasificador UML compatible`);
+     if (connection.sourceId === connection.targetId) errors.push(`La relación ${connection.id} no puede conectar una clase consigo misma`);
+     if (multiplicityIsInvalid(text(raw?.sourceMultiplicity) || connection.sourceMultiplicity, connection.source) || multiplicityIsInvalid(text(raw?.targetMultiplicity) || connection.targetMultiplicity, connection.target)) errors.push(`La relación ${connection.id} tiene una multiplicidad inválida: use n, n..m o n..*`);
+     const sourceKind = classifierEndpoint(connection.sourceId)?.kind, targetKind = classifierEndpoint(connection.targetId)?.kind;
+     const classLike = (kind?: UmlElement['kind']) => kind === 'class' || kind === 'abstract';
+     if (connection.usage === 'enum') {
+       if (sourceKind === 'enum' || targetKind !== 'enum') errors.push(`La dependencia «use» ${connection.id} debe ir de una clase hacia un enum`);
+     } else if (connection.type === 'inheritance' && (!classLike(sourceKind) || !classLike(targetKind))) {
+       errors.push(`La herencia ${connection.id} requiere clases o clases abstractas en ambos extremos`);
+     } else if (connection.type === 'implementation' && (!classLike(sourceKind) || targetKind !== 'interface')) {
+       errors.push(`La implementación ${connection.id} requiere una clase concreta y una interfaz`);
+     } else if (['association', 'aggregation', 'composition'].includes(connection.type) && (!classLike(sourceKind) || !classLike(targetKind))) {
+       errors.push(`La relación ${connection.type} ${connection.id} requiere clases o clases abstractas en ambos extremos`);
+     }
+     if (connection.type === 'composition' && (connection.source.upper === null || connection.source.upper > 1)) errors.push(`La composición ${connection.id} no puede tener más de un composite propietario en el extremo origen`);
+     if (connection.associationClassId && !classLike(classifierEndpoint(connection.associationClassId)?.kind)) errors.push(`La clase de asociación ${connection.associationClassId} no es una clase UML compatible`);
+     if (raw) {
+       connection.sourceRoleName = text(raw.sourceRoleName) || undefined; connection.targetRoleName = text(raw.targetRoleName) || undefined;
+       connection.sourceNavigable = typeof raw.sourceNavigable === 'boolean' ? raw.sourceNavigable : undefined; connection.targetNavigable = typeof raw.targetNavigable === 'boolean' ? raw.targetNavigable : undefined;
+       if (text(raw.stereotype)) connection.stereotype = text(raw.stereotype); if (text(raw.usage)) connection.usage = text(raw.usage);
+     }
+   });
+   const inheritance = connections.filter((c) => c.type === 'inheritance'), inheritedIds = new Set(inheritance.map((c) => c.targetId));
   const excludedElements = elements.filter((e) => e.kind === 'interface' || (e.kind === 'abstract' && !inheritedIds.has(e.id)) || (e.kind === 'class' && /service$/i.test(e.name))).map((e) => ({ id: e.id, name: e.name, kind: e.kind as 'class' | 'interface' | 'abstract', reason: e.kind === 'interface' ? 'La interfaz no es persistible; se conserva como elemento técnico excluido.' : 'La clase técnica *Service se excluye; se conserva como elemento técnico excluido.' }));
   const excludedIds = new Set(excludedElements.map((e) => e.id)), tableElements = elements.filter((e) => ['class', 'abstract'].includes(e.kind) && !excludedIds.has(e.id));
   const columnsFor = (element: UmlElement): RelationalColumn[] => { const id = element.structuredAttributes.find((a) => a.name.toLowerCase() === 'id'); const pk = id ? [{ name: columnName(id.canonicalName), sourceName: id.sourceName, canonicalName: id.canonicalName, source: 'attribute' as const, sourceType: id.sourceType, javaType: id.javaType, nullable: false, multiplicity: id.multiplicity, primaryKey: true }] : [{ name: 'id', sourceName: 'id', canonicalName: 'id', source: 'attribute' as const, sourceType: 'UUID', javaType: 'UUID', nullable: false, multiplicity: { lower: 1, upper: 1 }, primaryKey: true }]; return [...pk, ...element.structuredAttributes.filter((a) => a !== id).map((a) => ({ name: columnName(a.canonicalName), sourceName: a.sourceName, canonicalName: a.canonicalName, source: 'attribute' as const, sourceType: a.sourceType, javaType: a.javaType, nullable: a.multiplicity.lower === 0, multiplicity: a.multiplicity, ...(elements.find((x) => x.kind === 'enum' && x.name.toLowerCase() === a.sourceType.toLowerCase()) ? { enumName: a.sourceType } : {}) }))]; };

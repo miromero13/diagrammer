@@ -24,6 +24,36 @@ const RELATION_LABELS: Record<Exclude<Tool, 'select' | 'class' | 'interface' | '
   aggregation: 'Agregación',
 }
 
+const RELATIONS = ['association', 'dependency', 'enumUsage', 'inheritance', 'implementation', 'composition', 'aggregation'] as const
+
+export const UmlElementPreview = ({ kind }: { kind: UmlKind }) => {
+  const title = kind === 'enum' ? 'Status' : kind === 'interface' ? '«interface» Service' : kind === 'abstract' ? '«abstract» BaseEntity' : 'Customer'
+  const details = kind === 'enum' ? ['ACTIVE', 'ARCHIVED'] : ['+ id: UUID', '+ save(): void']
+
+  return (
+    <span aria-hidden="true" className="w-20 shrink-0 overflow-hidden rounded border border-current/40 bg-background text-[7px] leading-3 text-foreground shadow-sm">
+      <span className={`block border-b border-current/30 px-1 text-center font-semibold ${kind === 'abstract' ? 'italic' : ''}`}>{title}</span>
+      {details.map((detail) => <span key={detail} className="block border-b border-current/20 px-1 last:border-b-0">{detail}</span>)}
+    </span>
+  )
+}
+
+export const UmlRelationPreview = ({ relation }: { relation: typeof RELATIONS[number] }) => {
+  const dashed = relation === 'dependency' || relation === 'enumUsage' || relation === 'implementation'
+  const triangle = relation === 'inheritance' || relation === 'implementation'
+  const arrow = relation === 'dependency' || relation === 'enumUsage'
+  const diamond = relation === 'composition' || relation === 'aggregation'
+
+  return (
+    <svg aria-hidden="true" className="h-5 w-20 shrink-0 text-foreground" viewBox="0 0 80 20" fill="none">
+      <line x1="12" y1="10" x2="68" y2="10" stroke="currentColor" strokeWidth="1.75" strokeDasharray={dashed ? '6 4' : undefined} strokeLinecap="round" />
+      {triangle ? <path d="M 68 4 L 76 10 L 68 16 Z" fill="hsl(var(--background))" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /> : null}
+      {arrow ? <path d="M 68 5 L 76 10 L 68 15" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" /> : null}
+      {diamond ? <path d="M 4 10 L 10 4 L 16 10 L 10 16 Z" fill={relation === 'composition' ? 'currentColor' : 'hsl(var(--background))'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /> : null}
+    </svg>
+  )
+}
+
 export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, onAddNode, onToolChange }: DiagramElementsSidebarProps) => {
   return (
     <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border bg-background">
@@ -49,54 +79,15 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               Elementos
             </h3>
             <div className="space-y-2">
-              <Button
-                size="sm"
-                variant={tool === 'class' ? 'default' : 'outline'}
-                className="w-full justify-start"
-                onClick={() => {
-                  onToolChange('class')
-                  onAddNode('class')
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Clase
-              </Button>
-              <Button
-                size="sm"
-                variant={tool === 'enum' ? 'default' : 'outline'}
-                className="w-full justify-start"
-                onClick={() => {
-                  onToolChange('enum')
-                  onAddNode('enum')
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Enum
-              </Button>
-              <Button
-                size="sm"
-                variant={tool === 'interface' ? 'default' : 'outline'}
-                className="w-full justify-start"
-                onClick={() => {
-                  onToolChange('interface')
-                  onAddNode('interface')
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Interfaz
-              </Button>
-              <Button
-                size="sm"
-                variant={tool === 'abstract' ? 'default' : 'outline'}
-                className="w-full justify-start"
-                onClick={() => {
-                  onToolChange('abstract')
-                  onAddNode('abstract')
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Clase abstracta
-              </Button>
+              {([['class', 'Clase'], ['enum', 'Enum'], ['interface', 'Interfaz'], ['abstract', 'Clase abstracta']] as const).map(([kind, label]) => (
+                <Button key={kind} size="sm" variant={tool === kind ? 'default' : 'outline'} className="h-auto w-full justify-start gap-2 px-2 py-1.5" onClick={() => {
+                  onToolChange(kind)
+                  onAddNode(kind)
+                }}>
+                  <UmlElementPreview kind={kind} />
+                  <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />{label}</span>
+                </Button>
+              ))}
             </div>
           </section>
 
@@ -106,18 +97,18 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
               Relaciones
             </h3>
             <div className="grid grid-cols-1 gap-2">
-              {(['association', 'dependency', 'enumUsage', 'inheritance', 'implementation', 'composition', 'aggregation'] as const).map((relation) => (
+              {RELATIONS.map((relation) => (
                 <Button
                   key={relation}
                   size="sm"
                   variant={tool === relation ? 'default' : 'outline'}
-                  className="w-full justify-start"
+                  className="h-auto w-full justify-start gap-2 px-2 py-1.5"
                   onClick={() => {
                     onToolChange(tool === relation ? 'select' : relation)
                   }}
                 >
-                  <Workflow className="mr-2 h-4 w-4" />
-                  {RELATION_LABELS[relation]}
+                  <UmlRelationPreview relation={relation} />
+                  <span className="flex items-center gap-1.5"><Workflow className="h-3.5 w-3.5" />{RELATION_LABELS[relation]}</span>
                 </Button>
               ))}
             </div>

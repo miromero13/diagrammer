@@ -6,12 +6,16 @@ import { DiagramEntity } from '../../diagrams/entities/diagram.entity';
 @Index(['diagramId'])
 @Index(['language'])
 @Index(['createdAt'])
+@Index(['ownerId'])
 export class GeneratedCodeEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'uuid', name: 'diagram_id' })
   diagramId: string;
+
+  @Column({ type: 'uuid', name: 'owner_id', nullable: true })
+  ownerId?: string | null;
 
   @ManyToOne(() => DiagramEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'diagram_id' })
@@ -23,11 +27,29 @@ export class GeneratedCodeEntity {
   @Column({ type: 'varchar', length: 50 })
   language: string;
 
+  @Column({ type: 'varchar', length: 30, default: 'QUEUED' })
+  status: string;
+
+  @Column({ type: 'varchar', length: 100, name: 'backend_name' })
+  backendName: string;
+
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  authentication: Record<string, unknown>;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  steps: Array<Record<string, string>>;
+
+  @Column({ type: 'text', nullable: true })
+  message?: string | null;
+
   @Column({ type: 'jsonb', name: 'code_structure' })
   codeStructure: Record<string, unknown>;
 
   @Column({ type: 'jsonb' })
   files: Record<string, string>;
+
+  @Column({ type: 'bytea', nullable: true, name: 'zip_data' })
+  zipData?: Buffer | null;
 
   @Column({ type: 'boolean', name: 'is_valid', default: true })
   isValid: boolean;

@@ -32,7 +32,7 @@ export class SpringBootGenerator {
   constructor(config: SpringBootGeneratorConfig) {
     this.config = {
       projectName: config.projectName || 'generated-project',
-      packageName: config.packageName || 'com.example.generated',
+      packageName: config.packageName || 'com.generated',
       databaseConfig: config.databaseConfig || {},
       springBootVersion: config.springBootVersion || '3.2.0',
       javaVersion: config.javaVersion || '17',

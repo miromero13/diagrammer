@@ -71,8 +71,8 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
 
       <Separator />
 
-      <div className="flex-1 overflow-hidden px-6 py-4">
-        <div className="flex h-full flex-col gap-4 overflow-hidden">
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex flex-col gap-4 pb-4">
           <section className="space-y-4">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Shapes className="h-4 w-4 text-muted-foreground" />
@@ -85,7 +85,7 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
                   onAddNode(kind)
                 }}>
                   <UmlElementPreview kind={kind} />
-                  <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />{label}</span>
+                  <span className="flex flex-1 items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-left shadow-sm"><Plus className="h-3.5 w-3.5" />{label}</span>
                 </Button>
               ))}
             </div>
@@ -108,7 +108,7 @@ export const DiagramElementsSidebar = ({ diagramName, diagramDescription, tool, 
                   }}
                 >
                   <UmlRelationPreview relation={relation} />
-                  <span className="flex items-center gap-1.5"><Workflow className="h-3.5 w-3.5" />{RELATION_LABELS[relation]}</span>
+                  <span className="flex flex-1 items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-left shadow-sm"><Workflow className="h-3.5 w-3.5" />{RELATION_LABELS[relation]}</span>
                 </Button>
               ))}
             </div>

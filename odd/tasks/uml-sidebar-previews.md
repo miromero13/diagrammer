@@ -40,6 +40,7 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - [x] UMLSP-3: Add focused rendered preview coverage.
 - [x] UMLSP-4: Run focused checks, frontend build, and diff validation.
 - [x] UMLSP-5: Commit only feature files and record evidence.
+- [x] UMLSP-6: Make the palette content scrollable and render item names as cards.
 
 ## Acceptance Checks
 
@@ -47,6 +48,8 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - Each relationship button shows its semantic line marker and dash pattern.
 - Labels remain readable and buttons remain accessible.
 - Existing creation behavior is unchanged.
+- The palette scrolls when its content exceeds the sidebar height.
+- Every preview label is displayed in its own card.
 
 ## Verification
 
@@ -55,15 +58,24 @@ Compact visual previews make the palette discoverable while preserving accessibl
 - Frontend build: `npm run build` — observed 2026-09-20: passed (`tsc && vite build`; 2184 modules transformed).
 - `git diff --check`: observed 2026-09-20: passed for staged and unstaged changes.
 - Runtime harness: N/A; the happy-dom Testing Library test renders every preview and verifies preserved element callbacks.
+- Sidebar refinement: `npm test -- --run src/pages/diagrams/components/diagram-elements-sidebar.test.tsx` — observed 2026-09-20: 1 file, 9 tests passed.
+- Sidebar refinement build: `npm run build` — observed 2026-09-20: passed.
+- Sidebar refinement diff check: `git diff --check` — observed 2026-09-20: passed.
+
+## Review Assessment
+
+- Receipt-driven development: enabled globally.
+- Committed-only assessment: medium risk, 207 changed lines, `under_budget`; native review is not due for this slice yet.
 
 ## Progress
 
-Current: completed. Engram mirror pending: multiple active runtime sessions prevented the required mirror save.
+Current: completed.
 
 ## Commit Evidence
 
 - Work-unit commit: `feat(diagrams): preview UML sidebar palette items` (final SHA reported with delivery).
 - Staged scope: only the sidebar implementation, its focused test, and this task document.
+- Sidebar refinement commit: `fix(diagrams): make sidebar palette scrollable` (SHA reported with delivery).
 
 ## Next Step
 

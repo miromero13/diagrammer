@@ -9,6 +9,7 @@ import { AppConfig } from '@/config/app.config'
 import { useTheme } from '@/hooks/useTheme'
 
 import { DiagramExportDropdown } from './components/diagram-export-dropdown'
+import { SpringbootGeneration } from './components/springboot-generation'
 import { DiagramChatSidebar } from './components/diagram-chat-sidebar'
 import { DiagramCanvasSurface } from './components/diagram-canvas'
 import { DiagramCollaboratorsTooltip } from './components/diagram-collaborators-tooltip'
@@ -1155,6 +1156,19 @@ const DiagramFlow = () => {
         return
       }
 
+      if (type === 'delete_element') {
+        const targetId = resolveNodeId(data.targetId ?? data.id)
+        const nodeExists = nodesRef.current.some((node) => node.id === targetId)
+        if (nodeExists) {
+          setNodes((current) => current.filter((node) => node.id !== targetId))
+          setEdges((current) => current.filter((edge) => edge.source !== targetId && edge.target !== targetId))
+          return
+        }
+        const edgeId = resolveEdgeId(data.targetId ?? data.id)
+        if (edgesRef.current.some((edge) => edge.id === edgeId)) setEdges((current) => current.filter((edge) => edge.id !== edgeId))
+        return
+      }
+
       const targetId = resolveNodeId(data.targetId ?? data.id)
       if (targetId) {
         setNodes((current) => current.map((node) => {
@@ -1206,14 +1220,6 @@ const DiagramFlow = () => {
         return
       }
 
-      if (type === 'delete_element') {
-        const elementId = resolveNodeId(data.targetId ?? data.id)
-        if (elementId) {
-          setNodes((current) => current.filter((node) => node.id !== elementId))
-          setEdges((current) => current.filter((edge) => edge.source !== elementId && edge.target !== elementId))
-          return
-        }
-      }
     })
   }, [openEdgeEditor, openNodeEditor, pushHistory, setEdges, setNodes, themeMode])
 
@@ -1741,6 +1747,13 @@ const DiagramFlow = () => {
 
             <div className="flex items-center gap-2 rounded-full bg-transparent backdrop-blur-sm pr-1">
               <DiagramCollaboratorsTooltip users={collaborationUsers} />
+              <SpringbootGeneration
+                diagramId={diagramId}
+                classes={nodes.map((node) => ({ id: node.id, name: node.data.name }))}
+                saveDiagram={async () => {
+                  if (diagramId) await diagramsService.quickUpdateDiagram(diagramId, toContent(nodesRef.current, edgesRef.current))
+                }}
+              />
               <DiagramExportDropdown
                 diagramName={diagram?.name}
                 nodes={nodes}

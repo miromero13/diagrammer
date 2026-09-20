@@ -77,6 +77,12 @@ const request = async <T>(path: string, options: RequestInit = {}, skipAuth = fa
 
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
+  getBlob: async (path: string) => {
+    const token = window.localStorage.getItem(ACCESS_TOKEN_KEY)
+    const response = await fetch(`${AppConfig.API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) throw new ApiError('Download failed', response.status)
+    return response.blob()
+  },
   post: <T>(path: string, body?: unknown, skipAuth = false) => request<T>(path, {
     method: 'POST',
     body: body === undefined || isFormData(body) ? body as BodyInit | undefined : JSON.stringify(body),

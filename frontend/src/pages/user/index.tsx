@@ -36,16 +36,6 @@ const UserPage = (): JSX.Element => {
           </div>
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Resumen</CardTitle>
-        </CardHeader>
-        <CardContent className='space-y-2 text-sm text-muted-foreground'>
-          <p><strong className='text-foreground'>Usuario:</strong> {user?.username}</p>
-          <p><strong className='text-foreground'>Rol:</strong> {user?.role}</p>
-        </CardContent>
-      </Card>
     </div>
   )
 }

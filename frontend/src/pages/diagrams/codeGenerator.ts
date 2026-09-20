@@ -148,12 +148,12 @@ export const codeGenerator = {
     return code
   },
 
-  async generateSpringBootProject(graph: GraphLike, options: { projectName?: string; packageName?: string } = {}) {
+  async generateSpringBootProject(graph: GraphLike, options: { companyName?: string; backendName?: string } = {}) {
     const { projectId, diagramId } = await projectHelper.ensureProjectAndDiagram(graph)
     const response = await api.post<{ success: boolean; downloadUrl: string; message: string }>(`/code-generation/diagrams/${diagramId}/generate`, {
-      language: 'spring-boot',
-      projectName: options.projectName || 'generated-project',
-      packageName: options.packageName || 'com.example.generated',
+      companyName: options.companyName || 'generated',
+      backendName: options.backendName || 'generated_backend',
+      authentication: { enabled: false },
     })
 
     return { ...response, projectId, diagramId }

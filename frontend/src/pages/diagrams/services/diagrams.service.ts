@@ -15,4 +15,9 @@ export const diagramsService = {
   quickUpdateDiagram: async (diagramId: string, content: UpdateDiagramInput['content']) => {
     return api.patch(`/diagrams/${diagramId}/quick-update`, { content })
   },
+  startGeneration: async (diagramId: string, payload: { companyName: string; backendName: string; authentication: Record<string, unknown> }) =>
+    api.post<{ generationId: string }>(`/code-generation/diagrams/${diagramId}/generate`, payload),
+  getGenerationStatus: async (generationId: string) =>
+    api.get<{ generatedCode: { status: string; steps: Array<{ id: string; label: string; status: string }>; message?: string; compilationErrors?: string | null } }>(`/code-generation/${generationId}/status`),
+  downloadGeneration: (generationId: string) => api.getBlob(`/code-generation/${generationId}/download`),
 }

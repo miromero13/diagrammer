@@ -63,6 +63,9 @@ export const DiagramChatSidebar = ({
           <Bot className="h-4 w-4 text-muted-foreground" />
           Chat IA
         </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Editar: <code>crear clase Usuario</code> o <code>agregar atributo email:String a Usuario</code>. Una orden por línea.
+        </p>
       </div>
 
       <div className="flex-1 overflow-hidden px-3 py-3">
@@ -160,7 +163,7 @@ export const DiagramChatSidebar = ({
                   onInputChange(e.target.value)
                 }}
                 onKeyDown={onInputKeyDown}
-                placeholder={recordingVoice ? 'Dictando...' : 'Escribe una modificación o consulta...'}
+                placeholder={recordingVoice ? 'Dictando...' : 'Comando UML: crear clase Usuario'}
                 className="min-h-16 resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                 readOnly={recordingVoice}
               />

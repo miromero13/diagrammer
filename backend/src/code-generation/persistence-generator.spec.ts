@@ -28,6 +28,21 @@ describe('generatePersistence', () => {
     expect(migration).not.toMatch(/roles|permissions/i);
   });
 
+  it('generates Permission as a normal feature entity, repository, and table', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'permission', type: 'uml.Class', name: 'Permission', attributes: ['name: String'] },
+    ], connections: [] });
+    const generated = files(analysis);
+    const entity = generated.find((file) => file.path.endsWith('permissions/entity/PermissionEntity.java'))?.source;
+    const repository = generated.find((file) => file.path.endsWith('permissions/repository/PermissionRepository.java'))?.source;
+    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
+
+    expect(entity).toContain('@Entity');
+    expect(entity).toContain('@Table(name = "permission")');
+    expect(repository).toContain('JpaRepository<PermissionEntity, UUID>');
+    expect(migration).toContain('CREATE TABLE permission');
+  });
+
   it('maps one-to-many and optional foreign keys from the relational model', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'order', type: 'uml.Class', name: 'Order' },

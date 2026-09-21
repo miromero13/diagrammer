@@ -59,6 +59,17 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Work-unit commit:** `2105cb7 feat(code-generation): generate JPA persistence`.
 - **Next step:** Phase 6 may add DTOs, services, controllers, validation, and OpenAPI.
 
+## 6. Bugfix: domain names must not imply authorization
+
+- **Task ID:** `persistence-generation-basic-jwt-domain-names-20260921`
+- **Objective:** Allow modeled `User`, `Role`, and `Permission` business classes while keeping authorization controlled only by explicit basic-JWT authentication configuration.
+- **Scope:** Remove reserved-name persistence rejection, remove UML Role-User authentication special handling, and preserve removal of template role/permission security artifacts during basic-JWT adaptation.
+- **Constraints:** Use generic multiplicity-based relation mapping for every class pair; do not reintroduce role/permission authorization or change Phase 6.
+- **Regression coverage:** Add focused tests for `Permission` feature persistence, generic User/Role relationships, and absence of template authorization artifacts in basic-JWT output.
+- **Progress:** Completed.
+- **Verification evidence:** `cd backend && npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/persistence-generator.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` passed with 5 suites and 29 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed; a representative generated User/Role/Permission project passed `./gradlew compileJava --no-daemon` (`BUILD SUCCESSFUL`, 1 task executed) and `./gradlew testClasses --no-daemon` (`BUILD SUCCESSFUL`, 3 tasks, 2 executed and 1 up-to-date). No `./gradlew test` or `./gradlew bootRun` was run.
+- **Work-unit status:** Not committed per request.
+
 ## Mirror status
 
 - **Repository-relative locator:** `odd/tasks/persistence-generation.md`

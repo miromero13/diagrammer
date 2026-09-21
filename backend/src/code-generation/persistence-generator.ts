@@ -91,9 +91,6 @@ const validateModel = (analysis: UmlAnalysis, security: SecurityResolution) => {
     });
     const primaryKey = table.columns.find((column) => column.primaryKey);
     if (!primaryKey || primaryKey.javaType !== 'UUID') fail(`table ${table.name} requires a UUID primary key compatible with BaseEntity`);
-    if (['role', 'roles', 'permission', 'permissions', 'role_permission', 'role_permissions'].includes(table.name)) {
-      fail(`identity/access table ${table.name} is not allowed; basic JWT has no roles or permissions`);
-    }
   });
   normalizedModel.relationships.forEach((connection) => {
     if (!elementMap.has(connection.sourceId) || !elementMap.has(connection.targetId)) fail(`relationship ${connection.id} has a missing endpoint`);

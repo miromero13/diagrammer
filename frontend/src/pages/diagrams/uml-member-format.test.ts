@@ -8,6 +8,14 @@ describe('UML member format', () => {
     expect(validateUmlMethods('+calculateTotal(items: List<Item>): Decimal\n-cancel(): void')).toEqual([])
   })
 
+  it('accepts parser-supported derived, default, and modifier syntax', () => {
+    expect(validateUmlAttributes('-/total: Decimal [1] = 0 {static}')).toEqual([])
+    expect(validateUmlAttributes('+state: String = "ready" {abstract}')).toEqual([])
+    expect(validateUmlAttributes('count: Integer {STATIC}')).toEqual([])
+    expect(validateUmlMethods('#/calculate(): Decimal {abstract, static}')).toEqual([])
+    expect(validateUmlAttributes('name: String {instance}')).not.toEqual([])
+  })
+
   it('rejects malformed members without rejecting XMI-compatible optional types', () => {
     expect(validateUmlAttributes('name String')).not.toEqual([])
     expect(validateUmlMethods('calculateTotal(items String): Decimal')).not.toEqual([])

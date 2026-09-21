@@ -38,6 +38,8 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 - [x] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
 - [x] UML25-6: Add focused regression tests and update task evidence.
 - [x] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
+- [x] UML25-8: Make the element editor responsive, aligned, and scrollable on small viewports.
+- [x] UML25-9: Scope member modifiers to valid UML contexts and prevent invalid static/abstract combinations.
 
 ## Acceptance Criteria
 
@@ -60,11 +62,11 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-7 complete; implementation, focused tests, frontend/backend builds, and diff validation passed on the current branch.
+Current: UML25-9 complete; the follow-up editor correction passed focused frontend verification.
 
 ## Next Step
 
-Next: none for the authorized scope.
+Next: parent inspection and implementation work-unit commit.
 
 ## Evidence
 
@@ -76,3 +78,7 @@ Next: none for the authorized scope.
 - Work-unit commits: `e8d724d`, `55e9789`, `a121c4e`, `806a638`, `b3f9923`, `06cb551`, `72fc437`.
 - Review warning follow-up: enum usage validation now rejects class-to-class `enumUsage`; focused regression added after the approved review.
 - Native review: approved and acknowledged for the main semantic slice; follow-up fix assessed as medium risk and `under_budget`.
+- Follow-up focused test: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts` from `frontend` — 1 file, 6 tests passed.
+- Follow-up frontend build: `npm run build` from `frontend` — passed.
+- Follow-up diff validation: `git diff --check` from the repository root — passed.
+- Implementation commit: `<pending parent work-unit commit>`.

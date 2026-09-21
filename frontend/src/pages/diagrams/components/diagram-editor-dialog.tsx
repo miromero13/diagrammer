@@ -19,6 +19,7 @@ interface DiagramEditorDialogProps {
   open: boolean
   mode: EditorMode
   relationConfig: EditorRelationConfig | null
+  nodeKind: 'class' | 'interface' | 'abstract' | 'enum' | null
   nodeHasAttributes: boolean
   nodeIsEnum: boolean
   name: string
@@ -56,6 +57,7 @@ export const DiagramEditorDialog = ({
   open,
   mode,
   relationConfig,
+  nodeKind,
   nodeHasAttributes,
   nodeIsEnum,
   name,
@@ -91,6 +93,8 @@ export const DiagramEditorDialog = ({
   const attributeErrors = nodeHasAttributes ? validateUmlAttributes(attributes) : []
   const methodErrors = !nodeIsEnum ? validateUmlMethods(methods) : []
   const memberError = [...attributeErrors, ...methodErrors][0]
+  const isAbstractClassifier = nodeKind === 'abstract'
+  const isInterface = nodeKind === 'interface'
   const attributeRows: UmlAttributeInput[] = attributes.split('\n').filter(Boolean).map((line, index) => ({ ...parseUmlAttribute(line), ...attributeSemantics[index] }))
   const methodRows: UmlMethodInput[] = methods.split('\n').filter(Boolean).map((line, index) => ({ ...parseUmlMethod(line), ...methodSemantics[index] }))
   const updateAttributes = (index: number, field: string, value: string | boolean) => {
@@ -99,7 +103,13 @@ export const DiagramEditorDialog = ({
     onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue })))
   }
   const updateMethods = (index: number, field: string, value: string | boolean) => {
-    const rows = methodRows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row)
+    const rows = methodRows.map((row, rowIndex) => {
+      if (rowIndex !== index) return row
+      const next = { ...row, [field]: value }
+      if (field === 'isStatic' && value === true) next.isAbstract = false
+      if (field === 'isAbstract' && value === true) next.isStatic = false
+      return next
+    })
     onMethodsChange(rows.map(formatUmlMethod).join('\n'))
     onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived })))
   }
@@ -107,7 +117,7 @@ export const DiagramEditorDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl rounded-2xl">
+      <DialogContent className="grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-3xl overflow-hidden rounded-2xl p-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
         <DialogHeader>
           <DialogTitle>{mode === 'node' ? 'Editar elemento' : 'Editar relación'}</DialogTitle>
           <DialogDescription>
@@ -117,8 +127,10 @@ export const DiagramEditorDialog = ({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="min-h-0 overflow-y-auto pr-1">
         {mode === 'node' ? (
           <div className="space-y-4">
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Los modificadores pertenecen a atributos y métodos; no cambian el tipo del elemento ni las propiedades de las relaciones.</p>
             <div className="space-y-2">
               <Label htmlFor="editor-name">Nombre</Label>
               <Input id="editor-name" value={name} onChange={(event) => onNameChange(event.target.value)} />
@@ -132,16 +144,16 @@ export const DiagramEditorDialog = ({
               <div className="space-y-2">
                 <Label>Atributos</Label>
                 <div className="space-y-2">
-                  {attributeRows.length > 0 && <div className="hidden grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_70px_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Vis.</span><span>Nombre</span><span>Tipo</span><span>Mult.</span></div>}
-                  {attributeRows.map((row, index) => <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_70px_32px]">
-                    <select aria-label="Visibilidad del atributo" value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+                  {attributeRows.length > 0 && <div className="hidden grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_70px_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Vis.</span><span>Nombre</span><span>Tipo</span><span>Mult.</span><span>Borrar</span></div>}
+                  {attributeRows.map((row, index) => <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_70px_32px]">
+                    <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Visibilidad</span><select aria-label="Visibilidad del atributo" value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
                       {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                    <Input aria-label="Nombre del atributo" value={row.name} onChange={(event) => updateAttributes(index, 'name', event.target.value)} placeholder="nombre" />
-                    <Input aria-label="Tipo del atributo" value={row.type} onChange={(event) => updateAttributes(index, 'type', event.target.value)} placeholder="Tipo opcional" />
-                    <Input aria-label="Multiplicidad" value={row.multiplicity} onChange={(event) => updateAttributes(index, 'multiplicity', event.target.value)} placeholder="0..*" />
-                    <Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => { const rows = attributeRows.filter((_, rowIndex) => rowIndex !== index); onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Trash2 className="size-4" /></Button>
-                    <div className="col-span-2 flex flex-wrap gap-3 text-xs text-muted-foreground sm:col-span-4">
+                    </select></label>
+                    <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Nombre</span><Input aria-label="Nombre del atributo" value={row.name} onChange={(event) => updateAttributes(index, 'name', event.target.value)} placeholder="nombre" /></label>
+                    <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Tipo</span><Input aria-label="Tipo del atributo" value={row.type} onChange={(event) => updateAttributes(index, 'type', event.target.value)} placeholder="Tipo opcional" /></label>
+                    <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Multiplicidad</span><Input aria-label="Multiplicidad" value={row.multiplicity} onChange={(event) => updateAttributes(index, 'multiplicity', event.target.value)} placeholder="0..*" /></label>
+                    <div className="flex items-end sm:contents"><Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => { const rows = attributeRows.filter((_, rowIndex) => rowIndex !== index); onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Trash2 className="size-4" /></Button></div>
+                    <div className="col-span-full flex flex-wrap gap-3 text-xs text-muted-foreground sm:col-span-5">
                       <label><input type="checkbox" checked={Boolean(row.isStatic)} onChange={(event) => updateAttributes(index, 'isStatic', event.target.checked)} /> estático</label>
                       <label><input type="checkbox" checked={Boolean(row.isDerived)} onChange={(event) => updateAttributes(index, 'isDerived', event.target.checked)} /> derivado</label>
                       <label className="flex items-center gap-1">Valor predeterminado <Input aria-label="Valor predeterminado del atributo" value={row.defaultValue ?? ''} onChange={(event) => updateAttributes(index, 'defaultValue', event.target.value)} className="h-7 w-28" /></label>
@@ -155,26 +167,29 @@ export const DiagramEditorDialog = ({
             {!nodeIsEnum && <div className="space-y-2">
               <Label>Métodos</Label>
               <div className="space-y-2">
-                {methodRows.length > 0 && <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Nombre</span><span>Parámetros</span><span>Retorno</span></div>}
-                  {methodRows.map((row, index) => <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]">
-                  <select aria-label="Visibilidad del método" value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+                  {methodRows.length > 0 && <div className="hidden grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 px-1 text-xs text-muted-foreground sm:grid"><span>Vis.</span><span>Nombre</span><span>Parámetros</span><span>Retorno</span><span>Borrar</span></div>}
+                  {methodRows.map((row, index) => <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[55px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]">
+                  <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Visibilidad</span><select aria-label="Visibilidad del método" value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
                     {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                  <Input aria-label="Nombre del método" value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" />
-                  <Input aria-label="Parámetros (opcionales)" value={row.parameters} onChange={(event) => updateMethods(index, 'parameters', event.target.value)} placeholder="item: Item" />
-                  <Input aria-label="Retorno" value={row.returnType} onChange={(event) => updateMethods(index, 'returnType', event.target.value)} placeholder="void" />
-                   <Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => { const rows = methodRows.filter((_, rowIndex) => rowIndex !== index); onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Trash2 className="size-4" /></Button>
-                  <div className="col-span-2 flex gap-3 text-xs text-muted-foreground sm:col-span-4">
+                  </select></label>
+                  <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Nombre</span><Input aria-label="Nombre del método" value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" /></label>
+                  <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Parámetros</span><Input aria-label="Parámetros (opcionales)" value={row.parameters} onChange={(event) => updateMethods(index, 'parameters', event.target.value)} placeholder="item: Item" /></label>
+                  <label className="space-y-1 sm:contents"><span className="text-xs text-muted-foreground sm:hidden">Retorno</span><Input aria-label="Retorno" value={row.returnType} onChange={(event) => updateMethods(index, 'returnType', event.target.value)} placeholder="void" /></label>
+                    <div className="flex items-end sm:contents"><Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => { const rows = methodRows.filter((_, rowIndex) => rowIndex !== index); onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Trash2 className="size-4" /></Button></div>
+                  <div className="col-span-full flex flex-wrap gap-3 text-xs text-muted-foreground sm:col-span-5">
                     <label><input type="checkbox" checked={Boolean(row.isStatic)} onChange={(event) => updateMethods(index, 'isStatic', event.target.checked)} /> estático</label>
-                    <label><input type="checkbox" checked={Boolean(row.isAbstract)} onChange={(event) => updateMethods(index, 'isAbstract', event.target.checked)} /> abstracto</label>
+                    {isAbstractClassifier && <label><input type="checkbox" checked={Boolean(row.isAbstract)} onChange={(event) => updateMethods(index, 'isAbstract', event.target.checked)} /> abstracto</label>}
+                    {isInterface && <span className="rounded bg-muted px-1.5 py-0.5">abstracto implícito (interfaz)</span>}
                   </div>
-                </div>)}
+                 </div>)}
                 <Button type="button" variant="outline" size="sm" onClick={() => { const rows: UmlMethodInput[] = [...methodRows, { name: 'metodo', parameters: '', returnType: 'void', visibility: '', isStatic: false, isAbstract: false, isDerived: false, defaultValue: '' }]; onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Plus className="mr-1 size-4" />Método</Button>
               </div>
               <p className="text-xs text-muted-foreground">Ejemplo: `calcularTotal(items: List&lt;Item&gt;): Decimal`. Parámetros separados por coma.</p>
             </div>}
-            {memberError && <p className="text-sm text-destructive">{memberError}</p>}
-          </div>
+             {isAbstractClassifier && <p className="text-xs text-muted-foreground">Solo las operaciones de un clasificador abstracto pueden marcarse explícitamente como abstractas.</p>}
+             {isInterface && <p className="text-xs text-muted-foreground">Las operaciones de una interfaz son abstractas implícitamente.</p>}
+             {memberError && <p className="text-sm text-destructive">{memberError}</p>}
+           </div>
         ) : relationConfig && (
           <div className="space-y-4">
             {(relationConfig.relationType === 'association' || relationConfig.relationType === 'aggregation' || relationConfig.relationType === 'composition') && <div className="grid gap-4 sm:grid-cols-2">
@@ -226,6 +241,7 @@ export const DiagramEditorDialog = ({
         )}
           </div>
         )}
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

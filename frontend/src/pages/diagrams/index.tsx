@@ -2132,6 +2132,7 @@ const DiagramFlow = () => {
         open={editorOpen}
         mode={editorMode}
         relationConfig={editorRelationConfig}
+        nodeKind={editorNode?.data.kind ?? null}
         nodeHasAttributes={editorNode?.data.kind !== 'interface' && editorNode?.data.kind !== 'enum'}
         nodeIsEnum={editorNode?.data.kind === 'enum'}
         name={editorName}

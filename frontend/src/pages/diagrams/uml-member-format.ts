@@ -1,10 +1,11 @@
 const identifier = '[A-Za-z_$][\\w$]*'
 const type = `${identifier}(?:<${identifier}>)?(?:\\[\\])?`
 const multiplicity = '(?:\\d+|\\d+\\.\\.(?:\\d+|\\*))'
+const modifiers = '(?:\\s*\\{\\s*(?:static|abstract)(?:\\s*,\\s*(?:static|abstract))?\\s*\\})?'
 
-const attributePattern = new RegExp(`^[+\\-#~]?\\s*${identifier}(?:\\s*:\\s*${type})?(?:\\s*\\[${multiplicity}\\])?$`)
+const attributePattern = new RegExp(`^[+\\-#~]?\\s*\\/?${identifier}(?:\\s*:\\s*${type})?(?:\\s*\\[${multiplicity}\\])?(?:\\s*=\\s*[^\\n{}]+?)?${modifiers}$`, 'i')
 const parameterPattern = new RegExp(`^${identifier}\\s*:\\s*${type}$`)
-const methodPattern = new RegExp(`^[+\\-#~]?\\s*${identifier}\\s*\\((.*)\\)\\s*(?::\\s*${type})?$`)
+const methodPattern = new RegExp(`^[+\\-#~]?\\s*\\/?${identifier}\\s*\\((.*)\\)\\s*(?::\\s*${type})?${modifiers}$`, 'i')
 
 const lines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean)
 

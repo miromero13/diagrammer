@@ -56,7 +56,8 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Verification evidence:** Record exact commands and outcomes in this task document and final report, including intentionally rejected cases.
 - **Progress:** Completed.
 - **Verification evidence:** The exact focused Jest command passed with 5 suites and 28 tests; `npm run build` passed; `git diff --check` passed. Generated principal/Product, 1:N, optional, N:N, enum, joined-inheritance, composition, and association-class projects each passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`. The ambiguous one-to-one ownership rejection also passed. No `./gradlew test` or `./gradlew bootRun` was run.
-- **Next step:** Parent inspection and commit; no commit was created in this task.
+- **Work-unit commit:** `2105cb7 feat(code-generation): generate JPA persistence`.
+- **Next step:** Phase 6 may add DTOs, services, controllers, validation, and OpenAPI.
 
 ## Mirror status
 

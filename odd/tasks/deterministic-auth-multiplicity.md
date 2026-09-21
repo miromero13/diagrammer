@@ -22,6 +22,7 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - [x] AUTH-MULT-1: Normalize reversed numeric multiplicity ranges and align frontend/backend validation.
 - [x] AUTH-MULT-2: Verify deterministic security resolution and generation has no AI dependency.
 - [x] AUTH-MULT-3: Add focused regression tests and run allowed checks.
+- [x] AUTH-MULT-4: Accept principal-role one-to-many relationships regardless of endpoint direction.
 
 ## Authorized scope and route
 
@@ -39,15 +40,16 @@ Continue Spring Boot authentication and authorization generation without AI and 
 
 ## Progress
 
-Current: implementation complete. Frontend validation and backend UML analysis accept `n`, `n..m`, `n..*`, `*`, and the `1..0` alias; analysis canonicalizes the alias to `0..1`, keeps `0..*` unbounded, and preserves changed source text separately. Security case resolution consumes the normalized numeric cardinalities, and the generation service routes directly through the deterministic resolver/adaptor without an AI/Gemini call.
+Current: AUTH-MULT-4 is complete. The observed generation failure was `La relación entre principal y rol debe ser muchos a uno o muchos a muchos`; the root cause was `resolveSecurityCase` requiring the principal endpoint to be the many endpoint. Case 4 and Case 5 now accept exactly one many endpoint in either direction, while Case 6 remains the both-many topology and role-permission validation remains many-to-many.
 
 ## Verification evidence
 
 - `npm test -- --run src/pages/diagrams/uml-relationship-validation.test.ts` (frontend): passed, 1 file and 5 tests.
-- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 28 tests.
+- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 31 tests.
 - `npm run build` (frontend): passed (`tsc` and Vite production build).
 - `npm run build` (backend): passed (`nest build`).
 - `git diff --check`: passed with no output.
+- Added reversed principal-role regression coverage for Case 4 and Case 5, including normalized `1..0`/`0..*` input; the existing both-many regression continues to resolve Case 6.
 - Inspected `backend/src/code-generation/code-generation.service.ts`: security generation calls `normalizeAndValidateUml`, `resolveSecurityCase`, and `adaptCaseFiveTemplate`; no Gemini/AI dependency is present in this path.
 - Removed the unused `AiModule` import from `backend/src/code-generation/code-generation.module.ts`, keeping code generation explicitly independent of AI services.
 - Prohibited `./gradlew test` and `./gradlew bootRun` were not run.

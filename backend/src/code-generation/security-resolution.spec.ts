@@ -30,19 +30,25 @@ describe('resolveSecurityCase', () => {
         { id: 'permission', type: 'uml.Class', name: 'Permission' },
       ],
       connections: [
-        { id: 'account-role', type: 'association', sourceId: 'principal', targetId: 'role', sourceMultiplicity: '0..*', targetMultiplicity: '1..0' },
+        { id: 'account-role', type: 'association', sourceId: 'principal', targetId: 'role', sourceMultiplicity: '1..0', targetMultiplicity: '0..*' },
         { id: 'role-permission', type: 'association', sourceId: 'role', targetId: 'permission', sourceMultiplicity: '0..*', targetMultiplicity: '0..*' },
       ],
     });
 
     expect(umlAnalysis.errors).toEqual([]);
     expect(umlAnalysis.connections.find((connection) => connection.id === 'account-role')).toMatchObject({
-      source: { lower: 0, upper: null },
-      target: { lower: 0, upper: 1 },
-      targetMultiplicity: '0..1',
-      targetMultiplicityOriginal: '1..0',
+      source: { lower: 0, upper: 1 },
+      target: { lower: 0, upper: null },
+      sourceMultiplicity: '0..1',
+      sourceMultiplicityOriginal: '1..0',
+      targetMultiplicity: '0..*',
     });
     expect(resolveSecurityCase(umlAnalysis, { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' }).case).toBe(5);
+  });
+
+  it('resolves case 5 when the principal-role multiplicity direction is reversed', () => {
+    const principal = element('principal', 'Account'); const role = element('role', 'Role', []); const permission = element('permission', 'Permission', []);
+    expect(resolveSecurityCase(analysis([principal, role, permission], [connection('principal', 'role', false, true), connection('role', 'permission', true, true)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' }).case).toBe(5);
   });
 
   it('detects common login and credential names, then falls back to email and password', () => {
@@ -56,6 +62,13 @@ describe('resolveSecurityCase', () => {
 
   it('rejects duplicated bootstrap names', () => {
     expect(() => resolveSecurityCase(analysis([]), { enabled: false, bootstrap: { roleNames: ['ADMIN', 'admin'] } })).toThrow('no puede repetir');
+  });
+
+  it('rejects invalid role-only principal-role topologies', () => {
+    const principal = element('principal', 'Account'); const role = element('role', 'Role', []);
+    const config = { enabled: true, principalClassId: 'principal', roleClassId: 'role' };
+    expect(() => resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', false, false)]), config)).toThrow('exactamente un extremo muchos');
+    expect(() => resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', true, true)]), config)).toThrow('seleccione una entidad de permisos');
   });
 
   it('renames the case 5 template consistently', async () => {
@@ -160,6 +173,11 @@ describe('resolveSecurityCase', () => {
     expect(await readFile(join(root, 'build.gradle.kts'), 'utf8')).not.toContain('aop');
     const java = await Promise.all((await readdir(join(root, 'src/main/java'), { recursive: true })).filter((file) => file.endsWith('.java')).map((file) => readFile(join(root, 'src/main/java', file), 'utf8')));
     expect(java.join('\n')).not.toContain('Permission');
+  });
+
+  it('resolves case 4 when the principal-role multiplicity direction is reversed', () => {
+    const principal = element('principal', 'Account'); const role = element('role', 'Role', []);
+    expect(resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', false, true)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role' }).case).toBe(4);
   });
 
   it('adapts case 6 to multiple role authorities', async () => {

@@ -95,7 +95,11 @@ export function resolveSecurityCase(analysis: UmlAnalysis, config: Authenticatio
   if (role && !permission) {
     const principalRole = relation(analysis, principal, role);
     if (!principalRole) throw new Error('La entidad principal y la entidad de roles deben estar relacionadas');
-    if (hasMany(cardinality(principalRole, principal).right)) throw new Error('Los roles múltiples requieren una entidad de permisos');
+    const principalRoleCardinality = cardinality(principalRole, principal);
+    const principalMany = hasMany(principalRoleCardinality.left);
+    const roleMany = hasMany(principalRoleCardinality.right);
+    if (principalMany && roleMany) throw new Error('La autenticación solo con roles no admite una relación muchos a muchos; seleccione una entidad de permisos');
+    if (principalMany === roleMany) throw new Error('La autenticación solo con roles requiere exactamente un extremo muchos (una relación uno a muchos) entre principal y rol; marque un extremo como muchos');
     if (bootstrap.permissionNames.length) throw new Error('No se pueden definir permisos sin una entidad de permisos');
     return { case: 4, principal, role, bootstrap, ...identity };
   }
@@ -116,9 +120,11 @@ export function resolveSecurityCase(analysis: UmlAnalysis, config: Authenticatio
   if (!hasMany(rolePermissionCardinality.left) || !hasMany(rolePermissionCardinality.right)) {
     throw new Error('Los roles y permisos requieren una relación muchos a muchos');
   }
-  if (hasMany(principalRoleCardinality.left) && hasMany(principalRoleCardinality.right)) return { case: 6, principal, role, permission, bootstrap, ...identity };
-  if (hasMany(principalRoleCardinality.left) && !hasMany(principalRoleCardinality.right)) return { case: 5, principal, role, permission, bootstrap, ...identity };
-  throw new Error('La relación entre principal y rol debe ser muchos a uno o muchos a muchos');
+  const principalMany = hasMany(principalRoleCardinality.left);
+  const roleMany = hasMany(principalRoleCardinality.right);
+  if (principalMany && roleMany) return { case: 6, principal, role, permission, bootstrap, ...identity };
+  if (principalMany !== roleMany) return { case: 5, principal, role, permission, bootstrap, ...identity };
+  throw new Error('La relación entre principal y rol debe tener exactamente un extremo muchos (uno a muchos) o ambos extremos muchos (muchos a muchos)');
 }
 
 export async function adaptCaseFiveTemplate(projectRoot: string, security: SecurityResolution) {

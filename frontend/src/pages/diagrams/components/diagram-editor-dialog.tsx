@@ -103,7 +103,7 @@ export const DiagramEditorDialog = ({
     onMethodsChange(rows.map(formatUmlMethod).join('\n'))
     onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived })))
   }
-  const visibilityOptions = [['', 'Predeterminada'], ['+', 'Pública'], ['-', 'Privada'], ['#', 'Protegida'], ['~', 'Paquete']] as const
+  const visibilityOptions = [['', '—'], ['+', '+'], ['-', '-'], ['#', '#'], ['~', '~']] as const
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,9 +135,8 @@ export const DiagramEditorDialog = ({
                 <div className="min-w-0 space-y-4">
                   {attributeRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg border p-4">
                     <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_auto] sm:items-end">
-                      <div className="min-w-0 space-y-2">
-                        <Label htmlFor={`editor-attribute-${index}-visibility`}>Visibilidad</Label>
-                        <select id={`editor-attribute-${index}-visibility`} value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
+                      <div className="min-w-0">
+                        <select id={`editor-attribute-${index}-visibility`} aria-label="Signo del atributo" value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
                           {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                         </select>
                       </div>
@@ -162,29 +161,25 @@ export const DiagramEditorDialog = ({
             {!nodeIsEnum && <div className="min-w-0 space-y-3">
               <Label>Métodos</Label>
               <div className="min-w-0 space-y-4">
-                {methodRows.map((row, index) => <div key={index} className="min-w-0 space-y-4 rounded-lg border p-4">
-                  <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                    <div className="min-w-0 space-y-2">
-                      <Label htmlFor={`editor-method-${index}-visibility`}>Visibilidad</Label>
-                      <select id={`editor-method-${index}-visibility`} value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
+                {methodRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg border p-4">
+                  <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_auto] lg:items-end">
+                    <div className="min-w-0">
+                      <select id={`editor-method-${index}-visibility`} aria-label="Signo del método" value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
                         {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                       </select>
                     </div>
-                    <div className="min-w-0 space-y-2">
-                      <Label htmlFor={`editor-method-${index}-name`}>Nombre</Label>
-                      <Input id={`editor-method-${index}-name`} value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" className="h-10 w-full" />
+                    <div className="min-w-0">
+                      <Input id={`editor-method-${index}-name`} aria-label="Nombre del método" value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" className="h-10 w-full" />
                     </div>
-                    <div className="min-w-0 space-y-2">
-                      <Label htmlFor={`editor-method-${index}-parameters`}>Parámetros</Label>
-                      <Input id={`editor-method-${index}-parameters`} value={row.parameters} onChange={(event) => updateMethods(index, 'parameters', event.target.value)} placeholder="item: Item" className="h-10 w-full" />
+                    <div className="min-w-0">
+                      <Input id={`editor-method-${index}-parameters`} aria-label="Parámetros del método" value={row.parameters} onChange={(event) => updateMethods(index, 'parameters', event.target.value)} placeholder="item: Item" className="h-10 w-full" />
                     </div>
-                    <div className="min-w-0 space-y-2">
-                      <Label htmlFor={`editor-method-${index}-return`}>Retorno</Label>
-                      <Input id={`editor-method-${index}-return`} value={row.returnType} onChange={(event) => updateMethods(index, 'returnType', event.target.value)} placeholder="void" className="h-10 w-full" />
+                    <div className="min-w-0">
+                      <Input id={`editor-method-${index}-return`} aria-label="Tipo de retorno del método" value={row.returnType} onChange={(event) => updateMethods(index, 'returnType', event.target.value)} placeholder="void" className="h-10 w-full" />
                     </div>
-                  </div>
-                  <div className="flex items-end justify-end">
-                    <Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => { const rows = methodRows.filter((_, rowIndex) => rowIndex !== index); onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Trash2 className="size-4" /></Button>
+                    <div className="flex items-end justify-end">
+                      <Button type="button" variant="ghost" size="icon" aria-label="Eliminar método" onClick={() => { const rows = methodRows.filter((_, rowIndex) => rowIndex !== index); onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Trash2 className="size-4" /></Button>
+                    </div>
                   </div>
                 </div>)}
                 <Button type="button" variant="outline" size="sm" onClick={() => { const rows: UmlMethodInput[] = [...methodRows, { name: 'metodo', parameters: '', returnType: 'void', visibility: '', isStatic: false, isAbstract: false, isDerived: false, defaultValue: '' }]; onMethodsChange(rows.map(formatUmlMethod).join('\n')); onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived }))) }}><Plus className="mr-1 size-4" />Método</Button>

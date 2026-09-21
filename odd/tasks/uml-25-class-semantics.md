@@ -42,6 +42,7 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 - [x] UML25-9: Scope member modifiers to valid UML contexts and prevent invalid static/abstract combinations.
 - [x] UML25-10: Simplify the editor to basic UML fields with large inputs and vertical-only overflow.
 - [x] UML25-11: Remove attribute multiplicity from the editor and align visibility, name, type, and delete controls.
+- [x] UML25-12: Show UML visibility signs and align method fields in one desktop row.
 
 ## Acceptance Criteria
 
@@ -64,11 +65,11 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-11 complete; attribute multiplicity remains parser/model-backed while the editor exposes only visibility, name, type, and delete controls.
+Current: UML25-12 complete; visibility controls use UML signs and method fields align in one desktop row.
 
 ## Next Step
 
-Next: no remaining implementation step for UML25-11; await the next UML semantics request.
+Next: no remaining implementation step for UML25-12; await the next UML semantics request.
 
 ## Evidence
 
@@ -93,3 +94,6 @@ Next: no remaining implementation step for UML25-11; await the next UML semantic
 - UML25-11 frontend build: `npm run build` from `frontend` — passed.
 - UML25-11 diff validation: `git diff --check` from the repository root — passed.
 - UML25-11 implementation commit: `b410b63` (`fix(diagrams): simplify attribute fields`).
+- UML25-12 focused frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` from `frontend` — 7 files, 36 tests passed.
+- UML25-12 frontend build: `npm run build` from `frontend` — passed.
+- UML25-12 diff validation: `git diff --check` from the repository root — passed.

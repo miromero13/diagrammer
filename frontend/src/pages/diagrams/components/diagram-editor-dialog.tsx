@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2 } from 'lucide-react'
 
@@ -103,7 +104,7 @@ export const DiagramEditorDialog = ({
     onMethodsChange(rows.map(formatUmlMethod).join('\n'))
     onMethodSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived }) => ({ visibility, isStatic, isAbstract, isDerived })))
   }
-  const visibilityOptions = [['', '—'], ['+', '+'], ['-', '-'], ['#', '#'], ['~', '~']] as const
+  const visibilityOptions = [['default', '—'], ['+', '+'], ['-', '-'], ['#', '#'], ['~', '~']] as const
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,19 +134,22 @@ export const DiagramEditorDialog = ({
               <div className="min-w-0 space-y-3">
                 <Label>Atributos</Label>
                 <div className="min-w-0 space-y-4">
-                  {attributeRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg border p-4">
-                    <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_auto] sm:items-end">
+                  {attributeRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg">
+                    <div className="grid min-w-0 gap-4 sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1.4fr)_auto] sm:items-end">
                       <div className="min-w-0">
-                        <select id={`editor-attribute-${index}-visibility`} aria-label="Signo del atributo" value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
-                          {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
+                        <Select value={row.visibility || 'default'} onValueChange={(value) => updateAttributes(index, 'visibility', value === 'default' ? '' : value)}>
+                          <SelectTrigger id={`editor-attribute-${index}-visibility`} aria-label="Signo del atributo" className="h-10 w-14 px-2 [&>svg]:size-3">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="min-w-14">
+                            {visibilityOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="min-w-0 space-y-2">
-                        <Label htmlFor={`editor-attribute-${index}-name`}>Nombre</Label>
                         <Input id={`editor-attribute-${index}-name`} value={row.name} onChange={(event) => updateAttributes(index, 'name', event.target.value)} placeholder="nombre" className="h-10 w-full" />
                       </div>
                       <div className="min-w-0 space-y-2">
-                        <Label htmlFor={`editor-attribute-${index}-type`}>Tipo</Label>
                         <Input id={`editor-attribute-${index}-type`} value={row.type} onChange={(event) => updateAttributes(index, 'type', event.target.value)} placeholder="Tipo opcional" className="h-10 w-full" />
                       </div>
                       <div className="flex items-end justify-end">
@@ -161,12 +165,17 @@ export const DiagramEditorDialog = ({
             {!nodeIsEnum && <div className="min-w-0 space-y-3">
               <Label>Métodos</Label>
               <div className="min-w-0 space-y-4">
-                {methodRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg border p-4">
-                  <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_auto] lg:items-end">
+                {methodRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg">
+                  <div className="grid min-w-0 gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_auto] lg:items-end">
                     <div className="min-w-0">
-                      <select id={`editor-method-${index}-visibility`} aria-label="Signo del método" value={row.visibility ?? ''} onChange={(event) => updateMethods(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
-                        {visibilityOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
+                      <Select value={row.visibility || 'default'} onValueChange={(value) => updateMethods(index, 'visibility', value === 'default' ? '' : value)}>
+                        <SelectTrigger id={`editor-method-${index}-visibility`} aria-label="Signo del método" className="h-10 w-14 px-2 [&>svg]:size-3">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="min-w-14">
+                          {visibilityOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="min-w-0">
                       <Input id={`editor-method-${index}-name`} aria-label="Nombre del método" value={row.name} onChange={(event) => updateMethods(index, 'name', event.target.value)} placeholder="método" className="h-10 w-full" />

@@ -763,6 +763,16 @@ export const DiagramCanvasSurface = memo(({
 }: DiagramCanvasSurfaceProps) => {
   const reactFlow = useReactFlow()
 
+  useEffect(() => {
+    if (!flowNodes.length) return undefined
+
+    const frame = requestAnimationFrame(() => {
+      reactFlow.fitView({ padding: 0.2, duration: 0, minZoom: 0.2, maxZoom: 2.5 })
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [flowNodes.length, reactFlow])
+
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>) => {
     if (!AppConfig.COLLABORATION_ENABLED || !socketManager.isSocketConnected()) return
     socketManager.moveCursor(

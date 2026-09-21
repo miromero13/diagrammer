@@ -1,4 +1,5 @@
 import { SecurityResolution } from './security-resolution';
+import { featureName } from './feature-name';
 import { UmlElement } from './uml-analysis';
 
 export type GeneratedDomainFile = { path: string; source: string };
@@ -33,15 +34,14 @@ const sourceFor = (element: UmlElement, packageName: string, basePackage: string
   if (element.kind === 'interface') return `package ${packageName};\n\n${importsForElement}\npublic interface ${element.name} {\n${attributes(element)}\n}\n`;
   if (element.kind === 'abstract') return `package ${packageName};\n\n${importsForElement}\npublic abstract class ${element.name} {\n${attributes(element)}\n}\n`;
   const isPrincipal = security?.enabled && security.principal?.id === element.id;
-  return `package ${packageName};\n\n${isPrincipal ? 'import com.fasterxml.jackson.annotation.JsonIgnore;\n' : ''}import ${basePackage}.common.entity.BaseEntity;\nimport jakarta.persistence.Column;\nimport jakarta.persistence.Entity;\nimport jakarta.persistence.Table;\n${typeImports(element)}\n@Entity\n@Table(name = "${tableName(element.name)}")\npublic class ${element.name}Entity extends BaseEntity {\n${attributes(element, true, security)}\n}\n`;
+  return `package ${packageName};\n\n${isPrincipal ? 'import com.fasterxml.jackson.annotation.JsonIgnore;\n' : ''}import ${basePackage}.common.entity.BaseEntity;\nimport jakarta.persistence.Column;\nimport jakarta.persistence.Entity;\nimport jakarta.persistence.Table;\n${importsForElement}\n@Entity\n@Table(name = "${tableName(element.name)}")\npublic class ${element.name}Entity extends BaseEntity {\n${attributes(element, true, security)}\n}\n`;
 };
 
 export function generateDomainModel(elements: UmlElement[], basePackage: string, security: SecurityResolution): GeneratedDomainFile[] {
   return elements
     .filter((element) => element.kind !== 'enum')
     .map((element) => {
-      const isPrincipal = security.enabled && security.principal?.id === element.id;
-      const packageName = isPrincipal ? `${basePackage}.${element.name.charAt(0).toLowerCase()}${element.name.slice(1)}s.entity` : `${basePackage}.domain.model`;
+      const packageName = `${basePackage}.${featureName(element.name)}.${element.kind === 'class' ? 'entity' : 'model'}`;
       const fileName = element.kind === 'class' ? `${element.name}Entity.java` : `${element.name}.java`;
       return { path: `src/main/java/${packagePath(packageName)}/${fileName}`, source: sourceFor(element, packageName, basePackage, security) };
     });

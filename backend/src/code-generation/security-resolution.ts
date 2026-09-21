@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import { dirname, join, relative, sep } from 'path';
 
+import { featureName } from './feature-name';
 import { UmlAnalysis, UmlElement } from './uml-analysis';
 
 export type AuthenticationConfig = {
@@ -60,13 +61,12 @@ export async function adaptCaseFiveTemplate(projectRoot: string, security: Secur
   }
 
   await renameTemplateTerms(projectRoot, [
-    ['Users', `${security.principal.name}s`], ['users', plural(security.principal.name)],
+    ['Users', featureName(security.principal.name)], ['users', featureName(security.principal.name)],
     ['User', security.principal.name], ['user', camel(security.principal.name)],
   ]);
   await adaptBasicAuthentication(projectRoot, security);
 }
 
-const plural = (name: string) => `${name.charAt(0).toLowerCase()}${name.slice(1)}s`;
 const camel = (name: string) => `${name.charAt(0).toLowerCase()}${name.slice(1)}`;
 
 async function filesUnder(directory: string, predicate: (name: string) => boolean = () => true) {

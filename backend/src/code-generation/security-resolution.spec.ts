@@ -38,6 +38,7 @@ describe('basic JWT security generation', () => {
     await adaptCaseFiveTemplate(root, resolveSecurityCase(analysis(), config));
 
     const javaRoot = join(root, 'src/main/java/backend/accounts');
+    expect(await readdir(join(root, 'src/main/java/backend'))).toContain('accounts');
     const source = await readFile(join(javaRoot, 'service/AccountAuthService.java'), 'utf8');
     const initializer = await readFile(join(javaRoot, 'config/DataInitializer.java'), 'utf8');
     const generated = (await Promise.all((await readdir(join(root, 'src/main/java'), { recursive: true })).filter((file) => file.endsWith('.java')).map((file) => readFile(join(root, 'src/main/java', file), 'utf8')))).join('\n');

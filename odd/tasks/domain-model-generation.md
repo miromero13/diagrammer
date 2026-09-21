@@ -47,8 +47,19 @@ Generate the authorized Phase 4 Java domain model from normalized UML while reta
 - **Work-unit commit:** `c79731a feat(code-generation): generate UML domain model`.
 - **Next step:** Phase 5 may add persistence relationships, repositories, migrations, enums, and UML inheritance mapping.
 
+## 5. Correct package-by-feature domain architecture
+
+- **Objective:** Generate every UML concrete class in its own deterministic feature package while keeping the selected authentication principal in that same feature package.
+- **Scope:** Share one feature-name helper between domain-model generation and basic-JWT template adaptation; emit concrete entities under `<feature>/entity` and interfaces or abstract classes under `<feature>/model`.
+- **Constraints:** Use the UML class name currently available; do not use a generic `domain` package; preserve BaseEntity, UUID, JPA, normalized attributes, and basic JWT only; do not add roles, permissions, privileges, AOP authorization, endpoint authorization, or Phase 5 artifacts.
+- **Acceptance criteria:** `User` emits `users/entity/UserEntity.java`, `Product` emits `products/entity/ProductEntity.java`, non-concrete types emit their own `<feature>/model` paths, a non-default principal such as `Account` uses `accounts` consistently in template and domain output, and the selected principal is emitted once.
+- **Route/delegation evidence:** `CodeGenerationService.runGeneration` resolves the principal, adapts the copied template, then delegates normalized elements to `generateDomainModel`; both generators call the shared feature-name helper.
+- **Verification evidence:** `npm test -- --runInBand src/code-generation/security-resolution.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` passed with 3 suites and 4 tests; `npm run build` passed; `git diff --check` passed; a representative Account/Product/Document project passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`.
+- **Progress:** Completed.
+- **Next step:** Phase 5 may add persistence relationships, repositories, migrations, enums, and UML inheritance mapping.
+
 ## Mirror status
 
 - **Repository-relative locator:** `odd/tasks/domain-model-generation.md`
 - **Engram topic:** `odd/domain-model-generation/tasks`
-- **Status:** Mirror pending: Engram rejected both the initial and final writes because multiple active runtime sessions match this repository; retry with the authoritative session identity.
+- **Status:** Mirror pending: Engram rejected the Phase 4 correction write because multiple active runtime sessions match this repository; retry with the authoritative session identity.

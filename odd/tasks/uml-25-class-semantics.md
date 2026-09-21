@@ -68,10 +68,11 @@ Next: none for the authorized scope.
 
 ## Evidence
 
-- Frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` — 7 files, 34 tests passed.
+- Frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` — 7 files, 35 tests passed.
 - Frontend build: `npm run build` from `frontend` — passed.
 - Backend tests: `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts` from `backend` — 1 suite, 14 tests passed.
 - Backend build: `npm run build` from `backend` — passed.
 - Diff validation: `git diff --check` — passed.
-- Work-unit commits: `e8d724d`, `55e9789`, `a121c4e`, `806a638`, `b3f9923`.
+- Work-unit commits: `e8d724d`, `55e9789`, `a121c4e`, `806a638`, `b3f9923`, `06cb551`, `72fc437`.
 - Review warning follow-up: enum usage validation now rejects class-to-class `enumUsage`; focused regression added after the approved review.
+- Native review: approved and acknowledged for the main semantic slice; follow-up fix assessed as medium risk and `under_budget`.

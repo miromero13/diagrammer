@@ -29,6 +29,7 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - [x] AUTH-BASIC-2: Collect principal, login field, credential field, and test credentials in the generation form.
 - [x] AUTH-BASIC-3: Generate the initial test user without role or permission dependencies and verify the baseline path.
 - [x] AUTH-BASIC-4: Reject generation requests that omit the required authentication configuration.
+- [x] AUTH-BASIC-5: Add an explicit disabled-by-default authentication control that submits `enabled` and only requires authentication fields when enabled.
 
 ## Authorized scope and route
 
@@ -47,7 +48,7 @@ Continue Spring Boot authentication and authorization generation without AI and 
 
 ## Progress
 
-Current: AUTH-BASIC-1 through AUTH-BASIC-3 are complete. Initial generation now uses only a selected concrete principal, login and credential attributes, and test credentials; role and permission generation remains deferred.
+Current: AUTH-BASIC-1 through AUTH-BASIC-5 are complete. Authentication is disabled by default and generation submits only `authentication: { enabled: false }` unless the user explicitly enables it; role and permission generation remains deferred.
 
 ## Verification evidence
 
@@ -75,6 +76,7 @@ Current: AUTH-BASIC-1 through AUTH-BASIC-3 are complete. Initial generation now 
 - Authentication is now required by the DTO and `generateBackend`; omitted configuration produces an actionable error instead of silently selecting disabled authentication. An explicitly supplied `enabled: false` configuration remains supported by the existing resolver branch.
 - `npm run build` (backend): passed (`nest build`); `git diff --check`: passed with no output. No Gradle command was run.
 - Work-unit commit: `9826744 feat(code-generation): add basic JWT authentication`.
+- AUTH-BASIC-5 verification: `npm test -- --run src/pages/diagrams/components/springboot-generation.test.ts` (frontend) passed, 1 file and 3 tests; `npm run build` (frontend) passed (`tsc` and Vite production build). No Gradle command was run.
 
 ## Next step
 

@@ -23,10 +23,11 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - [x] AUTH-MULT-2: Verify deterministic security resolution and generation has no AI dependency.
 - [x] AUTH-MULT-3: Add focused regression tests and run allowed checks.
 - [x] AUTH-MULT-4: Accept principal-role one-to-many relationships regardless of endpoint direction.
+- [x] AUTH-MULT-5: Accept one-to-one principal-role relationships as the single-role topology.
 
 ## Authorized scope and route
 
-- Authorized files: UML relationship validation, UML analysis/security resolution, code-generation module wiring, focused tests, and this task record.
+- Authorized files: UML relationship validation, UML analysis/security resolution, code-generation module wiring/template contract, focused tests, and this task record.
 - Route: delegated direct writer because implementation spans multiple non-trivial files.
 - Trigger evidence: backend normalization/security behavior and frontend validation must remain consistent.
 
@@ -40,20 +41,23 @@ Continue Spring Boot authentication and authorization generation without AI and 
 
 ## Progress
 
-Current: AUTH-MULT-4 is complete. The observed generation failure was `La relación entre principal y rol debe ser muchos a uno o muchos a muchos`; the root cause was `resolveSecurityCase` requiring the principal endpoint to be the many endpoint. Case 4 and Case 5 now accept exactly one many endpoint in either direction, while Case 6 remains the both-many topology and role-permission validation remains many-to-many.
+Current: AUTH-MULT-5 is complete. The resolver accepts `0..1` and `1..1` principal-role relationships as the valid one-to-one topology.
 
 ## Verification evidence
 
 - `npm test -- --run src/pages/diagrams/uml-relationship-validation.test.ts` (frontend): passed, 1 file and 5 tests.
-- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 31 tests.
+- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 35 tests.
 - `npm run build` (frontend): passed (`tsc` and Vite production build).
 - `npm run build` (backend): passed (`nest build`).
 - `git diff --check`: passed with no output.
 - Added reversed principal-role regression coverage for Case 4 and Case 5, including normalized `1..0`/`0..*` input; the existing both-many regression continues to resolve Case 6.
+- Added one-to-one principal-role regression coverage for Case 4 and Case 5 using both `0..1`/`1..1` endpoint permutations; the focused backend command passed all 35 tests.
+- Updated security resolution so one-to-one principal-role relationships resolve to Case 4 without permissions and Case 5 with a many-to-many role-permission relationship; Case 6 and Case 7 constraints remain unchanged.
+- Updated `ROLES_AND_PERMISSIONS.md` so the authentication contract documents `1:1` as a valid Case 4/5 principal-role topology.
 - Inspected `backend/src/code-generation/code-generation.service.ts`: security generation calls `normalizeAndValidateUml`, `resolveSecurityCase`, and `adaptCaseFiveTemplate`; no Gemini/AI dependency is present in this path.
 - Removed the unused `AiModule` import from `backend/src/code-generation/code-generation.module.ts`, keeping code generation explicitly independent of AI services.
 - Prohibited `./gradlew test` and `./gradlew bootRun` were not run.
 
 ## Next step
 
-No further implementation is required for this task; retain the focused checks as regression coverage.
+AUTH-MULT-5 is complete; no further work remains for this task.

@@ -15,6 +15,13 @@ const element = (id: string, name: string, attributes = ['email:String', 'passwo
 
 const analysis = (elements: any[], connections: any[] = []) => ({ elements, connections, errors: [], warnings: [], structuredWarnings: [], normalizedModel: { elements, relationships: connections, excludedElements: [] }, relationalModel: { inheritanceStrategy: 'joined', relationshipRule: '', tables: [], enums: [], relationships: [], excludedElements: [] } }) as UmlAnalysis;
 const connection = (sourceId: string, targetId: string, sourceMany: boolean, targetMany: boolean) => ({ id: `${sourceId}-${targetId}`, type: 'association', sourceId, targetId, sourceName: sourceId, targetName: targetId, sourceMultiplicity: sourceMany ? '*' : '1', targetMultiplicity: targetMany ? '*' : '1', source: { lower: sourceMany ? 0 : 1, upper: sourceMany ? null : 1 }, target: { lower: targetMany ? 0 : 1, upper: targetMany ? null : 1 } });
+const connectionWithMultiplicities = (sourceId: string, targetId: string, sourceMultiplicity: string, targetMultiplicity: string) => {
+  const bounds = (value: string) => {
+    const [lower, upper] = value.split('..');
+    return { lower: Number(lower), upper: upper === '*' ? null : Number(upper) };
+  };
+  return { id: `${sourceId}-${targetId}`, type: 'association', sourceId, targetId, sourceName: sourceId, targetName: targetId, sourceMultiplicity, targetMultiplicity, source: bounds(sourceMultiplicity), target: bounds(targetMultiplicity) };
+};
 
 describe('resolveSecurityCase', () => {
   it('resolves the template topology as case 5', () => {
@@ -64,10 +71,10 @@ describe('resolveSecurityCase', () => {
     expect(() => resolveSecurityCase(analysis([]), { enabled: false, bootstrap: { roleNames: ['ADMIN', 'admin'] } })).toThrow('no puede repetir');
   });
 
-  it('rejects invalid role-only principal-role topologies', () => {
+  it('rejects only many-to-many role-only principal-role topologies', () => {
     const principal = element('principal', 'Account'); const role = element('role', 'Role', []);
     const config = { enabled: true, principalClassId: 'principal', roleClassId: 'role' };
-    expect(() => resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', false, false)]), config)).toThrow('exactamente un extremo muchos');
+    expect(resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', false, false)]), config).case).toBe(4);
     expect(() => resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', true, true)]), config)).toThrow('seleccione una entidad de permisos');
   });
 
@@ -178,6 +185,25 @@ describe('resolveSecurityCase', () => {
   it('resolves case 4 when the principal-role multiplicity direction is reversed', () => {
     const principal = element('principal', 'Account'); const role = element('role', 'Role', []);
     expect(resolveSecurityCase(analysis([principal, role], [connection('principal', 'role', false, true)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role' }).case).toBe(4);
+  });
+
+  it.each([
+    ['0..1', '1..1'],
+    ['1..1', '0..1'],
+  ])('resolves case 4 for one-to-one principal-role multiplicities (%s / %s)', (principalMultiplicity, roleMultiplicity) => {
+    const principal = element('principal', 'Account'); const role = element('role', 'Role', []);
+    expect(resolveSecurityCase(analysis([principal, role], [connectionWithMultiplicities('principal', 'role', principalMultiplicity, roleMultiplicity)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role' }).case).toBe(4);
+  });
+
+  it.each([
+    ['0..1', '1..1'],
+    ['1..1', '0..1'],
+  ])('resolves case 5 for one-to-one principal-role multiplicities (%s / %s)', (principalMultiplicity, roleMultiplicity) => {
+    const principal = element('principal', 'Account'); const role = element('role', 'Role', []); const permission = element('permission', 'Permission', []);
+    expect(resolveSecurityCase(analysis([principal, role, permission], [
+      connectionWithMultiplicities('principal', 'role', principalMultiplicity, roleMultiplicity),
+      connection('role', 'permission', true, true),
+    ]), { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' }).case).toBe(5);
   });
 
   it('adapts case 6 to multiple role authorities', async () => {

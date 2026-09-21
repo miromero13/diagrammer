@@ -205,8 +205,8 @@ Los casos 1 al 7 son excluyentes. La regla de propietario puede agregarse despue
 | Autenticacion desactivada | Caso 1 |
 | Principal sin rol ni permiso | Caso 2 |
 | Rol modelado como atributo o enum dentro del principal | Caso 3 |
-| Principal `N:1` Rol, sin permisos | Caso 4 |
-| Principal `N:1` Rol y Rol `N:N` Permiso | Caso 5 |
+| Principal `1:1` o `N:1` Rol, sin permisos | Caso 4 |
+| Principal `1:1` o `N:1` Rol y Rol `N:N` Permiso | Caso 5 |
 | Principal `N:N` Rol y Rol `N:N` Permiso | Caso 6 |
 | Principal `N:N` Permiso, sin Rol | Caso 7 |
 

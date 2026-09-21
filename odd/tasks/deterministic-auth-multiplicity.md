@@ -24,6 +24,7 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - [x] AUTH-MULT-3: Add focused regression tests and run allowed checks.
 - [x] AUTH-MULT-4: Accept principal-role one-to-many relationships regardless of endpoint direction.
 - [x] AUTH-MULT-5: Accept one-to-one principal-role relationships as the single-role topology.
+- [x] AUTH-MULT-6: Preserve Spring Security package imports when adapting credential field names.
 
 ## Authorized scope and route
 
@@ -41,12 +42,12 @@ Continue Spring Boot authentication and authorization generation without AI and 
 
 ## Progress
 
-Current: AUTH-MULT-5 is complete. The resolver accepts `0..1` and `1..1` principal-role relationships as the valid one-to-one topology.
+Current: AUTH-MULT-6 is complete. Credential adaptation preserves the Spring Security package segment `password` while renaming domain credential identifiers such as `passwordHash`.
 
 ## Verification evidence
 
 - `npm test -- --run src/pages/diagrams/uml-relationship-validation.test.ts` (frontend): passed, 1 file and 5 tests.
-- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 35 tests.
+- `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts` (backend): passed, 2 suites and 36 tests.
 - `npm run build` (frontend): passed (`tsc` and Vite production build).
 - `npm run build` (backend): passed (`nest build`).
 - `git diff --check`: passed with no output.
@@ -54,10 +55,12 @@ Current: AUTH-MULT-5 is complete. The resolver accepts `0..1` and `1..1` princip
 - Added one-to-one principal-role regression coverage for Case 4 and Case 5 using both `0..1`/`1..1` endpoint permutations; the focused backend command passed all 35 tests.
 - Updated security resolution so one-to-one principal-role relationships resolve to Case 4 without permissions and Case 5 with a many-to-many role-permission relationship; Case 6 and Case 7 constraints remain unchanged.
 - Updated `ROLES_AND_PERMISSIONS.md` so the authentication contract documents `1:1` as a valid Case 4/5 principal-role topology.
+- Updated `adaptPrincipalCredentials` with a targeted negative lookbehind so `org.springframework.security.crypto.password` remains unchanged while domain `password` identifiers adapt to the selected credential field.
+- Added a Java-source regression covering both the Spring Security import and fully qualified use path with a `passwordHash` domain field; the adapted source preserves the package and renames the field/reference.
 - Inspected `backend/src/code-generation/code-generation.service.ts`: security generation calls `normalizeAndValidateUml`, `resolveSecurityCase`, and `adaptCaseFiveTemplate`; no Gemini/AI dependency is present in this path.
 - Removed the unused `AiModule` import from `backend/src/code-generation/code-generation.module.ts`, keeping code generation explicitly independent of AI services.
 - Prohibited `./gradlew test` and `./gradlew bootRun` were not run.
 
 ## Next step
 
-AUTH-MULT-5 is complete; no further work remains for this task.
+AUTH-MULT-6 is complete; no further work is pending in this task.

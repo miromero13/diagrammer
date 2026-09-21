@@ -169,7 +169,7 @@ async function adaptPrincipalCredentials(projectRoot: string, security: Security
       const capitalizedLogin = `${login.charAt(0).toUpperCase()}${login.slice(1)}`;
       source = source.replace(/import jakarta\.validation\.constraints\.Email;\n/g, '').replace(/\s*@Email\([^\n]+\)\n/g, '').split('findByEmail').join(`findBy${capitalizedLogin}`).replace(/\bemail\b/g, login);
     }
-    if (credential !== 'password') source = source.replace(/\bpassword\b/g, credential);
+    if (credential !== 'password') source = source.replace(/(?<!org\.springframework\.security\.crypto\.)\bpassword\b/g, credential);
     await fs.writeFile(file, source, 'utf8');
   }
 }

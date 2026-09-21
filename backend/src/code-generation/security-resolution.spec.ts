@@ -104,6 +104,35 @@ describe('resolveSecurityCase', () => {
     expect(await readFile(join(root, 'README.md'), 'utf8')).toContain('findByUsuario(usuario) contrasena PasswordEncoder');
   });
 
+  it('preserves the Spring Security password package while adapting credential identifiers', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diagrammer-security-credential-package-'));
+    const service = join(root, 'src/main/java/demo/users/service');
+    await mkdir(service, { recursive: true });
+    await writeFile(join(service, 'UserAuthService.java'), [
+      'package demo.users.service;',
+      'import org.springframework.security.crypto.password.PasswordEncoder;',
+      'class UserAuthService {',
+      '  org.springframework.security.crypto.password.PasswordEncoder encoder;',
+      '  String password;',
+      '  String value = password;',
+      '}',
+    ].join('\n'));
+    const principal = element('principal', 'Account', ['email:String', 'passwordHash:String']);
+    const role = element('role', 'Role', []);
+    const permission = element('permission', 'Permission', []);
+    const security = resolveSecurityCase(analysis([principal, role, permission], [connection('principal', 'role', true, false), connection('role', 'permission', true, true)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' });
+
+    await adaptCaseFiveTemplate(root, security);
+
+    const source = await readFile(join(root, 'src/main/java/demo/accounts/service/AccountAuthService.java'), 'utf8');
+    expect(source).toContain('import org.springframework.security.crypto.password.PasswordEncoder;');
+    expect(source).toContain('org.springframework.security.crypto.password.PasswordEncoder encoder;');
+    expect(source).toContain('String passwordHash;');
+    expect(source).toContain('String value = passwordHash;');
+    expect(source).not.toContain('org.springframework.security.crypto.passwordHash');
+    expect(source).not.toContain('String password;');
+  });
+
   it('removes authentication source files when it is disabled', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diagrammer-security-disabled-'));
     await mkdir(join(root, 'src/main/java/demo/users/entity'), { recursive: true });

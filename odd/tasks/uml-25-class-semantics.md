@@ -66,7 +66,7 @@ Current: UML25-9 complete; the follow-up editor correction passed focused fronte
 
 ## Next Step
 
-Next: parent inspection and implementation work-unit commit.
+Next: none for the authorized scope.
 
 ## Evidence
 
@@ -79,6 +79,7 @@ Next: parent inspection and implementation work-unit commit.
 - Review warning follow-up: enum usage validation now rejects class-to-class `enumUsage`; focused regression added after the approved review.
 - Native review: approved and acknowledged for the main semantic slice; follow-up fix assessed as medium risk and `under_budget`.
 - Follow-up focused test: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts` from `frontend` — 1 file, 6 tests passed.
+- Follow-up regression suite: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` from `frontend` — 7 files, 36 tests passed.
 - Follow-up frontend build: `npm run build` from `frontend` — passed.
 - Follow-up diff validation: `git diff --check` from the repository root — passed.
-- Implementation commit: `<pending parent work-unit commit>`.
+- Implementation commit: `da9d109` (`fix(diagrams): make UML editor responsive`).

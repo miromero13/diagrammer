@@ -44,7 +44,8 @@ Generate the authorized Phase 4 Java domain model from normalized UML while reta
 - **Route/delegation evidence:** `CodeGenerationService` persists steps and resumes pending generation statuses.
 - **Verification evidence:** Focused backend Jest suites and `npm run build` pass; the import-correction checks passed on 2026-09-21; the generated User(email, passwordHash) project previously passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`; frontend was unchanged.
 - **Progress:** Completed.
-- **Next step:** Parent review and bounded-work-unit commit.
+- **Work-unit commit:** `c79731a feat(code-generation): generate UML domain model`.
+- **Next step:** Phase 5 may add persistence relationships, repositories, migrations, enums, and UML inheritance mapping.
 
 ## Mirror status
 

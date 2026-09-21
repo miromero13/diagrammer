@@ -67,7 +67,7 @@ Current: UML25-10 complete; the editor now exposes readable basic fields, preser
 
 ## Next Step
 
-Next: parent work-unit commit after final inspection.
+Next: none for the authorized scope.
 
 ## Evidence
 
@@ -87,3 +87,4 @@ Next: parent work-unit commit after final inspection.
 - UML25-10 focused frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` from `frontend` — 7 files, 36 tests passed.
 - UML25-10 frontend build: `npm run build` from `frontend` — passed.
 - UML25-10 diff validation: `git diff --check` from the repository root — passed.
+- UML25-10 implementation commit: `2fedffa` (`fix(diagrams): simplify UML editor fields`).

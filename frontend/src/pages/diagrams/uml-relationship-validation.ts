@@ -8,6 +8,8 @@ export type UmlRelationshipValidationInput = {
   targetKind?: UmlRelationshipKind
   sourceMultiplicity?: string
   targetMultiplicity?: string
+  usage?: string
+  stereotype?: string
 }
 
 const multiplicity = /^(?:\d+|\d+\.\.(?:\d+|\*)|\*)$/
@@ -30,6 +32,7 @@ export const validateUmlRelationship = (input: UmlRelationshipValidationInput) =
   if (type === 'implementation' && (!classLike(input.sourceKind) || input.targetKind !== 'interface')) errors.push('La implementación requiere una clase concreta y una interfaz.')
   if (['association', 'aggregation', 'composition'].includes(type) && (!classLike(input.sourceKind) || !classLike(input.targetKind))) errors.push(`La ${type === 'composition' ? 'composición' : type === 'aggregation' ? 'agregación' : 'asociación'} requiere clases o clases abstractas en ambos extremos.`)
   if (type === 'composition' && input.sourceMultiplicity && (!input.sourceMultiplicity.endsWith('..1') && input.sourceMultiplicity !== '1')) errors.push('La composición necesita como máximo un composite propietario en el extremo origen.')
-  if (type === 'dependency' && (input.sourceKind === 'enum' || input.targetKind === 'enum') && (input.sourceKind !== 'class' && input.sourceKind !== 'abstract' || input.targetKind !== 'enum')) errors.push('La dependencia «use» debe ir de una clase hacia un enum.')
+  const isEnumUsage = input.type === 'enumUsage' || input.usage === 'enum' || input.stereotype === 'use'
+  if (isEnumUsage && (!classLike(input.sourceKind) || input.targetKind !== 'enum')) errors.push('La dependencia «use» debe ir de una clase hacia un enum.')
   return errors
 }

@@ -74,3 +74,4 @@ Next: none for the authorized scope.
 - Backend build: `npm run build` from `backend` — passed.
 - Diff validation: `git diff --check` — passed.
 - Work-unit commits: `e8d724d`, `55e9789`, `a121c4e`, `806a638`, `b3f9923`.
+- Review warning follow-up: enum usage validation now rejects class-to-class `enumUsage`; focused regression added after the approved review.

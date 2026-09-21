@@ -17,4 +17,8 @@ describe('UML relationship validation', () => {
   it('accepts legacy enum usage after endpoint normalization', () => {
     expect(validateUmlRelationship({ type: 'enumUsage', sourceId: 'user', targetId: 'status', sourceKind: 'class', targetKind: 'enum' })).toEqual([])
   })
+
+  it('rejects enum usage between two classes', () => {
+    expect(validateUmlRelationship({ type: 'enumUsage', sourceId: 'user', targetId: 'other', sourceKind: 'class', targetKind: 'class' }).some((error) => error.includes('enum'))).toBe(true)
+  })
 })

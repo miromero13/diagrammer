@@ -533,7 +533,7 @@ const DiagramFlow = () => {
     const enumUsage = rawRelationType === 'enumUsage' || relationType === 'dependency' && [sourceId, targetId].some((id) => nodesRef.current.find((node) => node.id === id)?.data.kind === 'enum')
     const endpoints = normalizeEnumUsageEndpoints(relationType, { source: sourceId, target: targetId }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])), enumUsage)
     const sourceNode = nodesRef.current.find((node) => node.id === endpoints.source), targetNode = nodesRef.current.find((node) => node.id === endpoints.target)
-    const validationError = validateUmlRelationship({ type: relationType, sourceId: endpoints.source, targetId: endpoints.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity: UML_RELATION_CONFIG[relationType].sourceFixed ?? '1', targetMultiplicity: UML_RELATION_CONFIG[relationType].hasMultiplicity ? '1' : '' })[0]
+    const validationError = validateUmlRelationship({ type: rawRelationType, sourceId: endpoints.source, targetId: endpoints.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity: UML_RELATION_CONFIG[relationType].sourceFixed ?? '1', targetMultiplicity: UML_RELATION_CONFIG[relationType].hasMultiplicity ? '1' : '', usage: enumUsage ? 'enum' : undefined, stereotype: enumUsage ? 'use' : undefined })[0]
     if (validationError) {
       setError(validationError)
       return null
@@ -1640,7 +1640,7 @@ const DiagramFlow = () => {
       const currentEdge = edges.find((edge) => edge.id === editorId)
       const sourceNode = currentEdge ? nodes.find((node) => node.id === currentEdge.source) : undefined
       const targetNode = currentEdge ? nodes.find((node) => node.id === currentEdge.target) : undefined
-      const validationError = currentEdge ? validateUmlRelationship({ type: normalizeRelationType(currentEdge.data?.relationType ?? editorRelationType), sourceId: currentEdge.source, targetId: currentEdge.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity, targetMultiplicity })[0] : undefined
+      const validationError = currentEdge ? validateUmlRelationship({ type: currentEdge.data?.relationType ?? editorRelationType, sourceId: currentEdge.source, targetId: currentEdge.target, sourceKind: sourceNode?.data.kind, targetKind: targetNode?.data.kind, sourceMultiplicity, targetMultiplicity, usage: currentEdge.data?.usage, stereotype: currentEdge.data?.stereotype })[0] : undefined
       if (validationError) {
         setError(validationError)
         return

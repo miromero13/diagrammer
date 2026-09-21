@@ -133,8 +133,8 @@ export const DiagramEditorDialog = ({
               <div className="min-w-0 space-y-3">
                 <Label>Atributos</Label>
                 <div className="min-w-0 space-y-4">
-                  {attributeRows.map((row, index) => <div key={index} className="min-w-0 space-y-4 rounded-lg border p-4">
-                    <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  {attributeRows.map((row, index) => <div key={index} className="min-w-0 rounded-lg border p-4">
+                    <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_auto] sm:items-end">
                       <div className="min-w-0 space-y-2">
                         <Label htmlFor={`editor-attribute-${index}-visibility`}>Visibilidad</Label>
                         <select id={`editor-attribute-${index}-visibility`} value={row.visibility ?? ''} onChange={(event) => updateAttributes(index, 'visibility', event.target.value)} className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm">
@@ -149,13 +149,9 @@ export const DiagramEditorDialog = ({
                         <Label htmlFor={`editor-attribute-${index}-type`}>Tipo</Label>
                         <Input id={`editor-attribute-${index}-type`} value={row.type} onChange={(event) => updateAttributes(index, 'type', event.target.value)} placeholder="Tipo opcional" className="h-10 w-full" />
                       </div>
-                      <div className="min-w-0 space-y-2">
-                        <Label htmlFor={`editor-attribute-${index}-multiplicity`}>Multiplicidad</Label>
-                        <Input id={`editor-attribute-${index}-multiplicity`} value={row.multiplicity} onChange={(event) => updateAttributes(index, 'multiplicity', event.target.value)} placeholder="0..*" className="h-10 w-full" />
+                      <div className="flex items-end justify-end">
+                        <Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => { const rows = attributeRows.filter((_, rowIndex) => rowIndex !== index); onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Trash2 className="size-4" /></Button>
                       </div>
-                    </div>
-                    <div className="flex items-end justify-end">
-                      <Button type="button" variant="ghost" size="icon" aria-label="Eliminar atributo" onClick={() => { const rows = attributeRows.filter((_, rowIndex) => rowIndex !== index); onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Trash2 className="size-4" /></Button>
                     </div>
                   </div>)}
                   <Button type="button" variant="outline" size="sm" onClick={() => { const rows: UmlAttributeInput[] = [...attributeRows, { name: 'atributo', type: '', multiplicity: '', visibility: '', isStatic: false, isAbstract: false, isDerived: false, defaultValue: '' }]; onAttributesChange(rows.map(formatUmlAttribute).join('\n')); onAttributeSemanticsChange(rows.map(({ visibility, isStatic, isAbstract, isDerived, defaultValue }) => ({ visibility, isStatic, isAbstract, isDerived, defaultValue }))) }}><Plus className="mr-1 size-4" />Atributo</Button>

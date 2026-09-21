@@ -156,13 +156,24 @@ async function adaptBasicAuthentication(projectRoot: string, security: SecurityR
   await fs.writeFile(details, detailsSource, 'utf8');
 
   let sessionSource = await fs.readFile(session, 'utf8');
-  sessionSource = sessionSource.replace(/\s*public \w*Role\w*SessionDto \w+;\s*/g, '\n');
+  const sessionPackage = sessionSource.match(/^package ([^;]+);/m)?.[1];
+  if (!sessionPackage) throw new Error('La sesión principal no declara un paquete Java');
+  sessionSource = `package ${sessionPackage};
+
+import java.util.UUID;
+
+public class ${principal.name}SessionDto {
+    public UUID id;
+    public String ${security.loginField};
+}
+`;
   await fs.writeFile(session, sessionSource, 'utf8');
 
   let authSource = await fs.readFile(auth, 'utf8');
   authSource = authSource
     .replace(/^import .*?(?:RoleSessionDto|PermissionSessionDto);\n|^import java\.util\.stream\.Collectors;\n/gm, '')
-    .replace(/\n\s*if \(\w+\.role != null\) \{[\s\S]*?\n\s*\}\n(?=\n\s*return)/, '\n');
+    .replace(/\n\s*if \(\w+\.role != null\) \{[\s\S]*?\n\s*\}\n(?=\n\s*return)/, '\n')
+    .replace(new RegExp(`private ${principal.name}SessionDto build${principal.name}Session\\(${principal.name}Entity (\\w+)\\) \\{[\\s\\S]*?\\n    \\}`), `private ${principal.name}SessionDto build${principal.name}Session(${principal.name}Entity account) {\n        ${principal.name}SessionDto session = new ${principal.name}SessionDto();\n        session.id = account.getId();\n        session.${security.loginField} = account.${security.loginField};\n        return session;\n    }`);
   await fs.writeFile(auth, authSource, 'utf8');
 
   const entityPackage = (await fs.readFile(entity, 'utf8')).match(/^package ([^;]+);/m)?.[1];
@@ -189,7 +200,6 @@ public class DataInitializer implements CommandLineRunner {
     @Override public void run(String... args) {
         if (repository.findBy${capitalize(security.loginField!)}(${javaString(security.testUserLogin!)}).isPresent()) return;
         ${principal.name}Entity account = new ${principal.name}Entity();
-        account.name = "Initial account";
         account.${security.loginField!} = ${javaString(security.testUserLogin!)};
         account.${security.credentialField!} = passwordEncoder.encode(${javaString(security.testUserPassword!)});
         repository.save(account);

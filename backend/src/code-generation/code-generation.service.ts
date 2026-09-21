@@ -5,7 +5,7 @@ import { FastifyReply } from 'fastify';
 import { randomUUID } from 'crypto';
 import { existsSync, promises as fs } from 'fs';
 import { tmpdir } from 'os';
-import { join, relative, sep } from 'path';
+import { dirname, join, relative, sep } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -14,6 +14,7 @@ import { GeneratedCodeEntity } from './entities/generated-code.entity';
 import { GenerateCodeDto } from './dto/generate-code.dto';
 import { normalizeAndValidateUml, renderUmlAnalysis } from './uml-analysis';
 import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolution';
+import { generateDomainModel } from './domain-model-generator';
 
 const archiver: any = require('archiver');
 const exec = promisify(execFile);
@@ -25,6 +26,7 @@ const PHASE_STEPS = [
   { id: 'VALIDATING_DIAGRAM', label: 'Validando diagrama' },
   { id: 'COPYING_TEMPLATE', label: 'Copiando plantilla' },
   { id: 'GENERATING_SECURITY', label: 'Generando autenticación y seguridad' },
+  { id: 'GENERATING_DOMAIN', label: 'Generando modelo de dominio' },
   { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
@@ -45,7 +47,7 @@ export class CodeGenerationService implements OnModuleInit {
 
   async onModuleInit() {
     const pending = await this.generatedCodeRepository.find({
-      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'COMPILING', 'PACKAGING_ZIP']) },
+      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'COMPILING', 'PACKAGING_ZIP']) },
     });
 
     for (const generation of pending) {
@@ -106,8 +108,12 @@ export class CodeGenerationService implements OnModuleInit {
        await fs.writeFile(join(projectRoot, 'uml-analysis.json'), JSON.stringify(analysis, null, 2));
         await this.updateStep(id, 'COPYING_TEMPLATE', 'COMPLETED', 'Plantilla copiada');
         await this.updateStep(id, 'GENERATING_SECURITY', 'IN_PROGRESS', 'Generando autenticación y seguridad');
-          await adaptCaseFiveTemplate(projectRoot, resolveSecurityCase(analysis, authentication));
+         const security = resolveSecurityCase(analysis, authentication);
+         await adaptCaseFiveTemplate(projectRoot, security);
         await this.updateStep(id, 'GENERATING_SECURITY', 'COMPLETED', 'Autenticación y seguridad adaptadas');
+        await this.updateStep(id, 'GENERATING_DOMAIN', 'IN_PROGRESS', 'Generando modelo de dominio');
+        await Promise.all(generateDomainModel(analysis.normalizedModel.elements, `com.${companySlug}.${backendName}`, security).map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+        await this.updateStep(id, 'GENERATING_DOMAIN', 'COMPLETED', 'Modelo de dominio generado');
         await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');
@@ -130,10 +136,11 @@ export class CodeGenerationService implements OnModuleInit {
   private async updateStep(id: string, stepId: string, status: string, message: string) {
     const generation = await this.generatedCodeRepository.findOneBy({ id });
     if (!generation) return;
+    const steps = PHASE_STEPS.map((phase) => generation.steps.find((step) => step.id === phase.id) || { ...phase, status: 'PENDING' });
     await this.generatedCodeRepository.update(id, {
       status: status === 'IN_PROGRESS' ? stepId : status === 'FAILED' ? 'FAILED' : generation.status,
       message,
-      steps: generation.steps.map((step) => step.id === stepId ? { ...step, status } : step),
+      steps: steps.map((step) => step.id === stepId ? { ...step, status } : step),
     });
   }
 

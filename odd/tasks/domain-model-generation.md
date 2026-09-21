@@ -56,6 +56,7 @@ Generate the authorized Phase 4 Java domain model from normalized UML while reta
 - **Route/delegation evidence:** `CodeGenerationService.runGeneration` resolves the principal, adapts the copied template, then delegates normalized elements to `generateDomainModel`; both generators call the shared feature-name helper.
 - **Verification evidence:** `npm test -- --runInBand src/code-generation/security-resolution.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` passed with 3 suites and 4 tests; `npm run build` passed; `git diff --check` passed; a representative Account/Product/Document project passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`.
 - **Progress:** Completed.
+- **Work-unit commit:** `fa1f32a fix(code-generation): organize generated packages by feature`.
 - **Next step:** Phase 5 may add persistence relationships, repositories, migrations, enums, and UML inheritance mapping.
 
 ## Mirror status

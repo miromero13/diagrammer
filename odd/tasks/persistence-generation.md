@@ -85,7 +85,9 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Objective:** Place every generated UML enum in the shared `common.enums` package.
 - **Scope:** Generate enum sources under `src/main/java/<base-package>/common/enums` and import them from entity fields using the same package.
 - **Verification:** Update persistence generation coverage for the shared path and enum import.
-- **Progress:** In progress.
+- **Verification:** `cd backend && npm run test -- --runInBand src/code-generation/persistence-generator.spec.ts src/code-generation/uml-analysis.spec.ts` passed with 2 suites and 27 tests; `cd backend && npm run build` passed; `git diff --check` passed.
+- **Progress:** Completed.
+- **Work-unit commit:** `7430ed4 fix(code-generation): centralize generated enums`.
 
 ## Mirror status
 

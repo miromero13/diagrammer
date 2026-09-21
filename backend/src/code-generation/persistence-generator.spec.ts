@@ -11,7 +11,7 @@ const files = (analysis: UmlAnalysis, enabled = false) => generatePersistence(an
 describe('generatePersistence', () => {
   it('generates relationally named principal and product entities without identity/access tables', () => {
     const analysis = normalizeAndValidateUml({ elements: [
-      { id: 'account', type: 'uml.Class', name: 'Account', attributes: ['email: String', 'passwordHash: String'] },
+      { id: 'account', type: 'uml.Class', name: 'Account', attributes: ['id: Long', 'createdAt: String', 'updatedAt: Long', 'email: String', 'passwordHash: String'] },
       { id: 'product', type: 'uml.Class', name: 'Product', attributes: ['sku: String'] },
     ], connections: [] });
     const generated = files(analysis, true);
@@ -20,10 +20,12 @@ describe('generatePersistence', () => {
     expect(account).toContain('@Table(name = "account")');
     expect(account).toContain('@Column(name = "email", nullable = false, unique = true)');
     expect(account).toContain('@JsonIgnore');
+    expect(account).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(generated.some((file) => file.path.endsWith('accounts/repository/AccountRepository.java'))).toBe(false);
     expect(generated.some((file) => file.path.endsWith('products/repository/ProductRepository.java'))).toBe(true);
     expect(migration).toContain('CREATE TABLE account');
     expect(migration).toContain('CREATE TABLE product');
+    expect(migration).toContain('id UUID NOT NULL');
     expect(migration).toContain('uk_account_email');
     expect(migration).not.toMatch(/roles|permissions/i);
   });
@@ -107,6 +109,7 @@ describe('generatePersistence', () => {
     const enrollment = files(association).find((file) => file.path.endsWith('enrollments/entity/EnrollmentEntity.java'))?.source;
     const associationMigration = files(association).find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(enrollment).toContain('@ManyToOne');
+    expect(enrollment).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(enrollment).toContain('@JoinColumn(name = "student_id", nullable = false)');
     expect(associationMigration).toContain('uk_enrollment_course_id_student_id');
   });
@@ -126,15 +129,28 @@ describe('generatePersistence', () => {
     const enumFile = generated.find((file) => file.path.endsWith('statuss/model/Status.java'))?.source;
     expect(base).toContain('@Inheritance(strategy = InheritanceType.JOINED)');
     expect(child).toContain('class InvoiceEntity extends DocumentEntity');
+    expect(child).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(child).toContain('@Enumerated(EnumType.STRING)');
     expect(enumFile).toContain('enum Status');
   });
 
-  it('rejects ambiguous one-to-one ownership instead of omitting persistence', () => {
+  it('uses the source end as the deterministic owner when one-to-one navigability is absent', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'profile', type: 'uml.Class', name: 'Profile' },
       { id: 'account', type: 'uml.Class', name: 'Account' },
     ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '0..1' }] });
+    const profile = files(analysis).find((file) => file.path.endsWith('profiles/entity/ProfileEntity.java'))?.source;
+    expect(profile).toContain('@JoinColumn(name = "account_id", nullable = true)');
+  });
+
+  it.each([
+    { sourceNavigable: false, targetNavigable: false },
+    { sourceNavigable: true, targetNavigable: true },
+  ])('rejects one-to-one ownership when both navigability flags are explicitly $sourceNavigable', (navigability) => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'profile', type: 'uml.Class', name: 'Profile' },
+      { id: 'account', type: 'uml.Class', name: 'Account' },
+    ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '0..1', ...navigability }] });
     expect(() => files(analysis)).toThrow('ambiguous ownership');
   });
 });

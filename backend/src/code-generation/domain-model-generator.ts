@@ -15,11 +15,12 @@ const imports = {
   Set: 'java.util.Set',
   UUID: 'java.util.UUID',
 };
+const baseEntityAttributes = new Set(['id', 'createdAt', 'updatedAt']);
 
 const javaType = (type: string) => type.replace(/\bArray<([^<>]+)>/g, '$1[]').replace(/\bMap</g, 'Map<String, ');
-const typeImports = (element: UmlElement) => [...new Set(element.structuredAttributes.flatMap((attribute) => (javaType(attribute.javaType).match(/[A-Z][A-Za-z0-9_]*/g) || []).map((name) => imports[name as keyof typeof imports]).filter(Boolean)))].sort().map((value) => `import ${value};\n`).join('');
+const typeImports = (element: UmlElement) => [...new Set(element.structuredAttributes.filter((attribute) => !baseEntityAttributes.has(attribute.canonicalName)).flatMap((attribute) => (javaType(attribute.javaType).match(/[A-Z][A-Za-z0-9_]*/g) || []).map((name) => imports[name as keyof typeof imports]).filter(Boolean)))].sort().map((value) => `import ${value};\n`).join('');
 
-const attributes = (element: UmlElement, entity = false, security?: SecurityResolution) => element.structuredAttributes.map((attribute) => {
+const attributes = (element: UmlElement, entity = false, security?: SecurityResolution) => element.structuredAttributes.filter((attribute) => !baseEntityAttributes.has(attribute.canonicalName)).map((attribute) => {
   const annotations = entity
     ? [
       attribute.canonicalName === security?.credentialField ? '    @JsonIgnore\n' : '',

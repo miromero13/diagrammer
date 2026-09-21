@@ -6,7 +6,7 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 
 - **Objective:** Use `UmlAnalysis.relationalModel` plus normalized UML connections as the single persistence authority.
 - **Scope:** Resolve association, aggregation, composition, one-to-one, one-to-many, many-to-one, many-to-many, explicit association classes, joined inheritance, physical names, ownership, and deterministic join tables.
-- **Constraints:** Reject missing endpoints, ambiguous or empty ownership, duplicate physical names, inheritance cycles, unsupported scalar class values, non-UUID IDs, and incomplete association-class data; never fall back to guessed Phase 4 names.
+- **Constraints:** Reject missing endpoints, explicit ambiguous ownership, duplicate physical names, inheritance cycles, unsupported scalar class values, and incomplete association-class data; UML `id`, `createdAt`, and `updatedAt` attributes never replace `BaseEntity` fields.
 - **Acceptance criteria:** Every emitted relationship has a deterministic Java/SQL mapping or a clear validation error; aggregation never cascades remove and composition collections use `CascadeType.ALL, orphanRemoval = true`.
 - **Route/delegation evidence:** Persistence generation consumes the normalized model and relational model produced by UML analysis after Phase 4 security resolution and domain generation.
 - **Verification evidence:** Focused persistence tests cover relationship cardinalities, ownership, join-table determinism, association classes, inheritance, and rejection paths.
@@ -18,7 +18,7 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Objective:** Emit package-by-feature entity classes that compile against the existing UUID `BaseEntity` template.
 - **Scope:** Align `@Table` names to relational physical tables; emit relationship annotations, columns, enum attributes, joined inheritance, and one permitted principal rewrite without duplicating or replacing the basic-JWT authentication infrastructure.
 - **Constraints:** Preserve `<feature>/entity/<Class>Entity.java`, `<feature>/model/<InterfaceOrAbstract>.java`, no generic `domain` package, and no roles, permissions, privileges, AOP authorization, or endpoint authorization.
-- **Acceptance criteria:** Concrete persistible classes are valid entities with relationally correct annotations; base entities use `InheritanceType.JOINED`, children extend the base; UML enums generate Java enum files and `EnumType.STRING` mappings.
+- **Acceptance criteria:** Concrete persistible classes are valid entities with relationally correct annotations; root entities extend `BaseEntity`, joined-inheritance children extend their parent without duplicate base fields; UML enums generate Java enum files and `EnumType.STRING` mappings.
 - **Route/delegation evidence:** `CodeGenerationService` invokes persistence generation after `GENERATING_DOMAIN` and before compilation; the legacy `SpringBootGenerator` remains unused.
 - **Verification evidence:** Generated representative projects compile for principal/Product, 1:N, optional, N:N, enum, and joined-inheritance cases where supported.
 - **Progress:** Completed.
@@ -55,7 +55,7 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Route/delegation evidence:** Status persistence, resume handling, and step ordering are verified in `CodeGenerationService` and its callers.
 - **Verification evidence:** Record exact commands and outcomes in this task document and final report, including intentionally rejected cases.
 - **Progress:** Completed.
-- **Verification evidence:** The exact focused Jest command passed with 5 suites and 28 tests; `npm run build` passed; `git diff --check` passed. Generated principal/Product, 1:N, optional, N:N, enum, joined-inheritance, composition, and association-class projects each passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`. The ambiguous one-to-one ownership rejection also passed. No `./gradlew test` or `./gradlew bootRun` was run.
+- **Verification evidence:** The original Phase 5 focused command passed with 5 suites and 28 tests; `npm run build` passed; `git diff --check` passed. Generated principal/Product, 1:N, optional, N:N, enum, joined-inheritance, composition, and association-class projects each passed `./gradlew compileJava --no-daemon` and `./gradlew testClasses --no-daemon`. No `./gradlew test` or `./gradlew bootRun` was run.
 - **Work-unit commit:** `2105cb7 feat(code-generation): generate JPA persistence`.
 - **Next step:** Phase 6 may add DTOs, services, controllers, validation, and OpenAPI.
 
@@ -69,6 +69,15 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Progress:** Completed.
 - **Verification evidence:** `cd backend && npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/persistence-generator.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` passed with 5 suites and 29 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed; a representative generated User/Role/Permission project passed `./gradlew compileJava --no-daemon` (`BUILD SUCCESSFUL`, 1 task executed) and `./gradlew testClasses --no-daemon` (`BUILD SUCCESSFUL`, 3 tasks, 2 executed and 1 up-to-date). No `./gradlew test` or `./gradlew bootRun` was run.
 - **Work-unit commits:** `302ac52 fix(code-generation): stop inferring auth from UML names`; `security-resolution.spec.ts` regression test recorded in the follow-up test commit.
+
+## 7. Bugfix: BaseEntity identity and implicit one-to-one ownership
+
+- **Task ID:** `persistence-generation-base-entity-ownership-20260921`
+- **Objective:** Generate every persistible table with `BaseEntity` UUID identity/audit fields and avoid rejecting one-to-one relationships that have no navigability flags.
+- **Scope:** Ignore UML `id`, `createdAt`, and `updatedAt` attributes; force UUID primary/foreign keys; use the source end as the deterministic owner only when both navigability flags are absent; preserve rejection for explicit both-true/both-false ownership.
+- **Regression coverage:** UML analysis, persistence, and domain-model tests cover UUID identity, inherited audit fields, implicit one-to-one ownership, and explicit ambiguity.
+- **Verification evidence:** `cd backend && npm run test -- --runInBand` passed with 8 suites and 44 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed. No Gradle commands were run.
+- **Progress:** Implemented; pending work-unit commit.
 
 ## Mirror status
 

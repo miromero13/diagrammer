@@ -130,7 +130,7 @@ describe('UML analysis', () => {
   it('creates association-class and joined-inheritance tables', () => {
     const analysis = normalizeAndValidateUml({
       elements: [
-        { id: 'user', type: 'uml.Class', name: 'User', attributes: ['id: int'] },
+        { id: 'user', type: 'uml.Class', name: 'User', attributes: ['id: int', 'createdAt: date', 'updatedAt: String'] },
         { id: 'member', type: 'uml.Class', name: 'Member', attributes: ['membershipNumber: String'] },
         { id: 'role', type: 'uml.Class', name: 'Role', attributes: ['id: int'] },
         { id: 'permission', type: 'uml.Class', name: 'Permission', attributes: ['id: int'] },
@@ -146,16 +146,16 @@ describe('UML analysis', () => {
     expect(association?.columns).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'role_id', source: 'relationship', referencedTable: 'role' }),
       expect.objectContaining({ name: 'permission_id', source: 'relationship', referencedTable: 'permission' }),
-      expect.objectContaining({ name: 'created_at', source: 'attribute' }),
     ]));
+    expect(association?.columns.map((column) => column.name)).not.toEqual(expect.arrayContaining(['created_at', 'updated_at']));
     expect(association?.columns).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'role_id', sourceType: 'int', javaType: 'Integer' }),
-      expect.objectContaining({ name: 'permission_id', sourceType: 'int', javaType: 'Integer' }),
+      expect.objectContaining({ name: 'role_id', sourceType: 'UUID', javaType: 'UUID' }),
+      expect.objectContaining({ name: 'permission_id', sourceType: 'UUID', javaType: 'UUID' }),
     ]));
     expect(analysis.relationalModel.tables.find((table) => table.name === 'member')).toMatchObject({
       inheritance: { strategy: 'joined', baseTable: 'user', childTable: 'member', foreignKeyColumn: 'id' },
     });
-    expect(analysis.relationalModel.tables.find((table) => table.name === 'member')?.columns.find((column) => column.name === 'id')).toMatchObject({ sourceType: 'int', javaType: 'Integer', foreignKey: true, referencedTable: 'user' });
+    expect(analysis.relationalModel.tables.find((table) => table.name === 'member')?.columns.find((column) => column.name === 'id')).toMatchObject({ sourceType: 'UUID', javaType: 'UUID', foreignKey: true, referencedTable: 'user', referencedColumn: 'id' });
   });
 
   it('excludes technical elements and reports usable UML warnings', () => {
@@ -176,11 +176,11 @@ describe('UML analysis', () => {
     expect(JSON.parse(JSON.stringify(analysis))).toMatchObject({ normalizedModel: { elements: expect.any(Array), relationships: expect.any(Array), excludedElements: expect.any(Array) }, relationalModel: { tables: expect.any(Array), relationships: expect.any(Array), excludedElements: expect.any(Array) }, errors: expect.any(Array), warnings: expect.any(Array), structuredWarnings: expect.any(Array) });
   });
 
-  it('uses UML ids as the PK, canonicalizes physical names, and structures warnings', () => {
-    const analysis = normalizeAndValidateUml({ elements: [{ id: 'member', type: 'uml.Class', name: 'Member', attributes: ['id: Long', 'mombershipNumber: String', 'departpment: String', 'rquipement: String'] }], connections: [] });
+  it('uses generated UUID identity and audit columns instead of UML attributes', () => {
+    const analysis = normalizeAndValidateUml({ elements: [{ id: 'member', type: 'uml.Class', name: 'Member', attributes: ['id: Long', 'createdAt: String', 'updatedAt: Long', 'mombershipNumber: String', 'departpment: String', 'rquipement: String'] }], connections: [] });
     const table = analysis.relationalModel.tables[0];
     expect(table.columns.filter((column) => column.name === 'id')).toHaveLength(1);
-    expect(table.columns.find((column) => column.sourceName === 'id')).toMatchObject({ name: 'id', sourceType: 'Long', javaType: 'Long', primaryKey: true });
+    expect(table.columns.find((column) => column.sourceName === 'id')).toMatchObject({ name: 'id', sourceType: 'UUID', javaType: 'UUID', primaryKey: true });
     expect(table.columns.map((column) => column.name)).toEqual(['id', 'membership_number', 'department', 'equipment']);
     expect(analysis.elements[0].structuredAttributes).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceName: 'mombershipNumber', canonicalName: 'membershipNumber' }),
@@ -220,15 +220,15 @@ describe('UML analysis', () => {
     expect(analysis.relationalModel.relationships[0]).toMatchObject({ orientation: 'payment.membership_id -> membership.id', rule: expect.stringContaining('extremo de muchos') });
     expect(analysis.relationalModel.tables.flatMap((table) => table.columns.filter((column) => column.foreignKey).map((column) => column.canonicalName))).toEqual(expect.arrayContaining(['membership_id', 'member_id', 'user_id', 'trainer_id', 'workout_id']));
     expect(analysis.relationalModel.tables.flatMap((table) => table.columns.filter((column) => column.foreignKey))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'membership_id', sourceType: 'int', javaType: 'Integer', referencedTable: 'membership' }),
-      expect.objectContaining({ name: 'user_id', sourceType: 'int', javaType: 'Integer', referencedTable: 'user' }),
-      expect.objectContaining({ name: 'member_id', sourceType: 'int', javaType: 'Integer', referencedTable: 'member' }),
-      expect.objectContaining({ name: 'trainer_id', sourceType: 'int', javaType: 'Integer', referencedTable: 'trainer' }),
-      expect.objectContaining({ name: 'workout_id', sourceType: 'int', javaType: 'Integer', referencedTable: 'workout' }),
+      expect.objectContaining({ name: 'membership_id', sourceType: 'UUID', javaType: 'UUID', referencedTable: 'membership' }),
+      expect.objectContaining({ name: 'user_id', sourceType: 'UUID', javaType: 'UUID', referencedTable: 'user' }),
+      expect.objectContaining({ name: 'member_id', sourceType: 'UUID', javaType: 'UUID', referencedTable: 'member' }),
+      expect.objectContaining({ name: 'trainer_id', sourceType: 'UUID', javaType: 'UUID', referencedTable: 'trainer' }),
+      expect.objectContaining({ name: 'workout_id', sourceType: 'UUID', javaType: 'UUID', referencedTable: 'workout' }),
     ]));
     expect(analysis.relationalModel.relationships.flatMap((relationship) => relationship.foreignKeys)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ column: 'membership_id', sourceType: 'int', javaType: 'Integer' }),
-      expect.objectContaining({ column: 'user_id', sourceType: 'int', javaType: 'Integer' }),
+      expect.objectContaining({ column: 'membership_id', sourceType: 'UUID', javaType: 'UUID' }),
+      expect.objectContaining({ column: 'user_id', sourceType: 'UUID', javaType: 'UUID' }),
     ]));
     const userRole = analysis.relationalModel.relationships.find((relationship) => relationship.sourceName === 'User' || relationship.targetName === 'User');
     expect(userRole).toMatchObject({ orientation: 'role.user_id -> user.id', rule: expect.stringContaining('extremo de muchos') });

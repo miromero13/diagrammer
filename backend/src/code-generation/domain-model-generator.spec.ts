@@ -14,7 +14,7 @@ describe('generateDomainModel', () => {
       account,
       user,
       product,
-      element('invoice', 'Invoice', 'class', [['amount', 'BigDecimal'], ['dueDate', 'LocalDate'], ['processedAt', 'LocalDateTime'], ['externalId', 'UUID']]),
+      element('invoice', 'Invoice', 'class', [['id', 'Long'], ['createdAt', 'String'], ['updatedAt', 'Long'], ['amount', 'BigDecimal'], ['dueDate', 'LocalDate'], ['processedAt', 'LocalDateTime'], ['externalId', 'UUID']]),
       element('auditable', 'Auditable', 'interface', [['identifiers', 'List<UUID>']]),
       element('document', 'Document', 'abstract', [['dates', 'Set<LocalDate>'], ['amounts', 'Map<BigDecimal>']]),
       element('status', 'Status', 'enum', []),
@@ -36,6 +36,7 @@ describe('generateDomainModel', () => {
     expect(invoice).toContain('import java.time.LocalDateTime;');
     expect(invoice).toContain('import java.util.UUID;');
     expect(invoice).toContain('public BigDecimal amount;');
+    expect(invoice).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(auditable).toContain('import java.util.List;');
     expect(auditable).toContain('import java.util.UUID;');
     expect(auditable).toContain('public List<UUID> identifiers;');

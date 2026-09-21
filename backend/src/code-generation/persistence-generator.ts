@@ -33,6 +33,7 @@ const scalarImports: Record<string, string> = {
   LocalDate: 'java.time.LocalDate',
   LocalDateTime: 'java.time.LocalDateTime',
 };
+const baseEntityAttributes = new Set(['id', 'createdAt', 'updatedAt']);
 
 const fail = (message: string): never => {
   throw new Error(`Persistence generation rejected: ${message}`);
@@ -121,7 +122,7 @@ const validateAttributes = (analysis: UmlAnalysis, tableMap: Map<string, Table>,
     const element = elements.get(elementId);
     if (!element) fail(`relational table ${table.name} has no normalized element`);
     element.structuredAttributes.forEach((attribute) => {
-      if (['id', 'createdAt', 'updatedAt'].includes(attribute.canonicalName)) return;
+      if (baseEntityAttributes.has(attribute.canonicalName)) return;
       const baseType = attribute.sourceType.replace(/<.*>|\[\]$/g, '').trim();
       const supported = ['String', 'Integer', 'Long', 'Float', 'Double', 'BigDecimal', 'Boolean', 'LocalDate', 'LocalDateTime', 'UUID'].includes(attribute.javaType) || enums.has(baseType.toLowerCase());
       const isCollection = /^(List|Set|Map|Array)</i.test(attribute.javaType);
@@ -232,14 +233,15 @@ const addRelationships = (analysis: UmlAnalysis, basePackage: string, members: M
     if (!sourceMany && !targetMany) {
       const sourceOwner = connection.sourceNavigable === true && connection.targetNavigable !== true;
       const targetOwner = connection.targetNavigable === true && connection.sourceNavigable !== true;
-      if (sourceOwner === targetOwner) fail(`one-to-one relationship ${connection.id} has ambiguous ownership; mark exactly one end navigable`);
-      const owner = sourceOwner ? source : target;
-      const referenced = sourceOwner ? target : source;
-      const ownerTable = sourceOwner ? sourceTable : targetTable;
-      const referencedTable = sourceOwner ? targetTable : sourceTable;
+      const implicitSourceOwner = connection.sourceNavigable === undefined && connection.targetNavigable === undefined;
+      if (!implicitSourceOwner && sourceOwner === targetOwner) fail(`one-to-one relationship ${connection.id} has ambiguous ownership; mark exactly one end navigable`);
+      const owner = implicitSourceOwner || sourceOwner ? source : target;
+      const referenced = implicitSourceOwner || sourceOwner ? target : source;
+      const ownerTable = implicitSourceOwner || sourceOwner ? sourceTable : targetTable;
+      const referencedTable = implicitSourceOwner || sourceOwner ? targetTable : sourceTable;
       const column = `${referencedTable.name}_id`;
       if (ownerTable.columns.some((candidate) => candidate.name === column && candidate.source === 'attribute')) fail(`relationship ${connection.id} conflicts with attribute column ${ownerTable.name}.${column}`);
-      const nullable = (sourceOwner ? connection.target : connection.source).lower === 0;
+      const nullable = (implicitSourceOwner || sourceOwner ? connection.target : connection.source).lower === 0;
       const ownerField = addManyToOne(members, basePackage, owner, referenced, column, nullable);
       const ownerMember = members.get(owner.id)!.find((member) => member.name === ownerField)!;
       ownerMember.annotations = connection.type === 'composition'
@@ -269,7 +271,7 @@ const addRelationships = (analysis: UmlAnalysis, basePackage: string, members: M
 };
 
 const scalarMember = (basePackage: string, element: UmlElement, table: Table, attribute: UmlElement['structuredAttributes'][number], enums: Map<string, RelationalModel['enums'][number]>, security: SecurityResolution): Member | null => {
-  if (['id', 'createdAt', 'updatedAt'].includes(attribute.canonicalName)) return null;
+  if (baseEntityAttributes.has(attribute.canonicalName)) return null;
   const column = table.columns.find((candidate) => candidate.sourceName === attribute.sourceName || candidate.canonicalName === attribute.canonicalName);
   if (!column) return null;
   const annotations = [`@Column(name = "${column.name}", nullable = ${column.nullable}${security.principal?.id === element.id && security.loginField === attribute.canonicalName ? ', unique = true' : ''})`];

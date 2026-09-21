@@ -92,3 +92,4 @@ Next: no remaining implementation step for UML25-11; await the next UML semantic
 - UML25-11 focused frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` from `frontend` — 7 files, 36 tests passed.
 - UML25-11 frontend build: `npm run build` from `frontend` — passed.
 - UML25-11 diff validation: `git diff --check` from the repository root — passed.
+- UML25-11 implementation commit: `b410b63` (`fix(diagrams): simplify attribute fields`).

@@ -64,6 +64,8 @@ export class CodeGenerationService implements OnModuleInit {
 
   async generateBackend(userId: string, diagramId: string, body: GenerateCodeDto) {
     const companySlug = normalizeCompanySlug(body.companyName);
+    if (!body.authentication) throw new BadRequestException('La configuración de autenticación es obligatoria e incluye principalClassId, loginField, credentialField, testUserLogin y testUserPassword');
+    const authentication: Record<string, unknown> = { ...body.authentication };
     const diagram = await this.diagramRepository.findOne({ where: { id: diagramId }, relations: { project: true } });
      if (!diagram) throw new NotFoundException('No se encontró el diagrama');
      if (diagram.project.ownerId !== userId) throw new UnauthorizedException('Solo el propietario del proyecto puede generar un backend');
@@ -72,25 +74,26 @@ export class CodeGenerationService implements OnModuleInit {
 
     const generation = await this.generatedCodeRepository.save(this.generatedCodeRepository.create({
       id: randomUUID(), diagramId, ownerId: userId, version: '1.0.0', language: 'spring-boot',
-       backendName: body.backendName, authentication: body.authentication || { enabled: false },
+        backendName: body.backendName, authentication,
        codeStructure: { projectName: body.backendName, companyName: body.companyName, diagramSnapshot }, files: {}, isValid: false,
       createdAt: new Date(),
        status: 'QUEUED', steps: PHASE_STEPS.map((step) => ({ ...step, status: 'PENDING' })), message: 'La generación está en espera',
     }));
 
-    void this.runGeneration(generation.id, companySlug, body.backendName, diagramSnapshot, body.authentication || { enabled: false });
+    void this.runGeneration(generation.id, companySlug, body.backendName, diagramSnapshot, authentication);
     return { success: true, generationId: generation.id, statusUrl: `/api/code-generation/${generation.id}` };
   }
 
-  private async runGeneration(id: string, companySlug: string, backendName: string, diagramSnapshot: Record<string, unknown>, authentication: Record<string, unknown> = { enabled: false }) {
+  private async runGeneration(id: string, companySlug: string, backendName: string, diagramSnapshot: Record<string, unknown>, authentication?: Record<string, unknown>) {
     const workRoot = join(tmpdir(), `diagrammer-generation-${id}`);
     try {
+       if (!authentication) throw new Error('La generación requiere configuración de autenticación: principalClassId, loginField, credentialField, testUserLogin y testUserPassword');
        await this.updateStep(id, 'PARSING_DIAGRAM', 'IN_PROGRESS', 'Analizando diagrama');
        const analysis = normalizeAndValidateUml(diagramSnapshot || {});
        await this.generatedCodeRepository.update(id, { codeStructure: { ...(await this.generatedCodeRepository.findOneBy({ id }))?.codeStructure, umlAnalysis: analysis } });
        await this.updateStep(id, 'PARSING_DIAGRAM', 'COMPLETED', 'Diagrama analizado');
        await this.updateStep(id, 'VALIDATING_DIAGRAM', 'IN_PROGRESS', 'Validando diagrama UML');
-      const selectedIds = ['principalClassId', 'roleClassId', 'permissionClassId'];
+       const selectedIds = ['principalClassId'];
       if (authentication.enabled === true) selectedIds.forEach((key) => {
         const value = authentication[key];
          if (value && !analysis.elements.some((element) => element.id === value)) analysis.errors.push(`La configuración de autenticación (${key}) no referencia una clase del diagrama: ${value}`);

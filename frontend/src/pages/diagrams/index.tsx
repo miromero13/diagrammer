@@ -1910,7 +1910,12 @@ const DiagramFlow = () => {
               <DiagramCollaboratorsTooltip users={collaborationUsers} />
               <SpringbootGeneration
                 diagramId={diagramId}
-                classes={nodes.map((node) => ({ id: node.id, name: node.data.name }))}
+                classes={nodes.map((node) => ({
+                  id: node.id,
+                  name: node.data.name,
+                  kind: node.data.kind,
+                  attributes: node.data.attributes
+                }))}
                 saveDiagram={async () => {
                   if (diagramId) await diagramsService.quickUpdateDiagram(diagramId, toContent(nodesRef.current, edgesRef.current))
                 }}

@@ -25,6 +25,10 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - [x] AUTH-MULT-4: Accept principal-role one-to-many relationships regardless of endpoint direction.
 - [x] AUTH-MULT-5: Accept one-to-one principal-role relationships as the single-role topology.
 - [x] AUTH-MULT-6: Preserve Spring Security package imports when adapting credential field names.
+- [x] AUTH-BASIC-1: Replace role/permission topology selection with basic authenticated access for generated backends.
+- [x] AUTH-BASIC-2: Collect principal, login field, credential field, and test credentials in the generation form.
+- [x] AUTH-BASIC-3: Generate the initial test user without role or permission dependencies and verify the baseline path.
+- [x] AUTH-BASIC-4: Reject generation requests that omit the required authentication configuration.
 
 ## Authorized scope and route
 
@@ -38,11 +42,12 @@ Continue Spring Boot authentication and authorization generation without AI and 
 - `0..*` remains valid and is recognized as many.
 - Invalid non-range values and genuinely invalid syntax still fail validation.
 - Spring Boot generation resolves and adapts authentication deterministically without invoking AI.
+- A generated test user can sign in and access all authenticated endpoints without role or permission checks.
 - Focused backend and frontend tests, builds, and `git diff --check` pass.
 
 ## Progress
 
-Current: AUTH-MULT-6 is complete. Credential adaptation preserves the Spring Security package segment `password` while renaming domain credential identifiers such as `passwordHash`.
+Current: AUTH-BASIC-1 through AUTH-BASIC-3 are complete. Initial generation now uses only a selected concrete principal, login and credential attributes, and test credentials; role and permission generation remains deferred.
 
 ## Verification evidence
 
@@ -60,7 +65,17 @@ Current: AUTH-MULT-6 is complete. Credential adaptation preserves the Spring Sec
 - Inspected `backend/src/code-generation/code-generation.service.ts`: security generation calls `normalizeAndValidateUml`, `resolveSecurityCase`, and `adaptCaseFiveTemplate`; no Gemini/AI dependency is present in this path.
 - Removed the unused `AiModule` import from `backend/src/code-generation/code-generation.module.ts`, keeping code generation explicitly independent of AI services.
 - Prohibited `./gradlew test` and `./gradlew bootRun` were not run.
+- Route: delegated direct writer because the baseline spans generation UI, request validation, deterministic template adaptation, and focused regression coverage.
+- `npm test -- --run src/pages/diagrams/components/springboot-generation.test.ts` (frontend): passed, 1 file and 2 tests.
+- `npm test -- --runInBand src/code-generation/security-resolution.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` (backend): passed, 2 suites and 3 tests.
+- `npm run build` (frontend): passed (`tsc` and Vite production build).
+- `npm run build` (backend): passed (`nest build`).
+- `git diff --check`: passed with no output.
+- The focused backend adaptation test verifies `passwordHash` preserves `org.springframework.security.crypto.password.PasswordEncoder`, embeds and encodes the supplied test-user password, and leaves no `Role`, `Permission`, or `RequirePermission` Java dependency.
+- Authentication is now required by the DTO and `generateBackend`; omitted configuration produces an actionable error instead of silently selecting disabled authentication. An explicitly supplied `enabled: false` configuration remains supported by the existing resolver branch.
+- `npm run build` (backend): passed (`nest build`); `git diff --check`: passed with no output. No Gradle command was run.
+- Commit status: pending; the parent will create the work-unit commit.
 
 ## Next step
 
-AUTH-MULT-6 is complete; no further work is pending in this task.
+Parent review and commit the completed basic authenticated-access baseline.

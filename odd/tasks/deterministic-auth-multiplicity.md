@@ -74,7 +74,7 @@ Current: AUTH-BASIC-1 through AUTH-BASIC-3 are complete. Initial generation now 
 - The focused backend adaptation test verifies `passwordHash` preserves `org.springframework.security.crypto.password.PasswordEncoder`, embeds and encodes the supplied test-user password, and leaves no `Role`, `Permission`, or `RequirePermission` Java dependency.
 - Authentication is now required by the DTO and `generateBackend`; omitted configuration produces an actionable error instead of silently selecting disabled authentication. An explicitly supplied `enabled: false` configuration remains supported by the existing resolver branch.
 - `npm run build` (backend): passed (`nest build`); `git diff --check`: passed with no output. No Gradle command was run.
-- Commit status: pending; the parent will create the work-unit commit.
+- Work-unit commit: `9826744 feat(code-generation): add basic JWT authentication`.
 
 ## Next step
 

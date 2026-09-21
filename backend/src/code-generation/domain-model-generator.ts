@@ -1,5 +1,5 @@
 import { SecurityResolution } from './security-resolution';
-import { featureName } from './feature-name';
+import { featurePackageName } from './feature-name';
 import { UmlElement } from './uml-analysis';
 
 export type GeneratedDomainFile = { path: string; source: string };
@@ -42,7 +42,7 @@ export function generateDomainModel(elements: UmlElement[], basePackage: string,
   return elements
     .filter((element) => element.kind !== 'enum')
     .map((element) => {
-      const packageName = `${basePackage}.${featureName(element.name)}.${element.kind === 'class' ? 'entity' : 'model'}`;
+      const packageName = `${basePackage}.${featurePackageName(element.name)}`;
       const fileName = element.kind === 'class' ? `${element.name}Entity.java` : `${element.name}.java`;
       return { path: `src/main/java/${packagePath(packageName)}/${fileName}`, source: sourceFor(element, packageName, basePackage, security) };
     });

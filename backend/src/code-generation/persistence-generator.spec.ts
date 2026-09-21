@@ -15,14 +15,14 @@ describe('generatePersistence', () => {
       { id: 'product', type: 'uml.Class', name: 'Product', attributes: ['sku: String'] },
     ], connections: [] });
     const generated = files(analysis, true);
-    const account = generated.find((file) => file.path.endsWith('accounts/entity/AccountEntity.java'))?.source;
+    const account = generated.find((file) => file.path.endsWith('accounts/AccountEntity.java'))?.source;
     const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(account).toContain('@Table(name = "account")');
     expect(account).toContain('@Column(name = "email", nullable = false, unique = true)');
     expect(account).toContain('@JsonIgnore');
     expect(account).not.toMatch(/public .* (id|createdAt|updatedAt);/);
-    expect(generated.some((file) => file.path.endsWith('accounts/repository/AccountRepository.java'))).toBe(false);
-    expect(generated.some((file) => file.path.endsWith('products/repository/ProductRepository.java'))).toBe(true);
+    expect(generated.some((file) => file.path.endsWith('accounts/AccountRepository.java'))).toBe(false);
+    expect(generated.some((file) => file.path.endsWith('products/ProductRepository.java'))).toBe(true);
     expect(migration).toContain('CREATE TABLE account');
     expect(migration).toContain('CREATE TABLE product');
     expect(migration).toContain('id UUID NOT NULL');
@@ -35,14 +35,29 @@ describe('generatePersistence', () => {
       { id: 'permission', type: 'uml.Class', name: 'Permission', attributes: ['name: String'] },
     ], connections: [] });
     const generated = files(analysis);
-    const entity = generated.find((file) => file.path.endsWith('permissions/entity/PermissionEntity.java'))?.source;
-    const repository = generated.find((file) => file.path.endsWith('permissions/repository/PermissionRepository.java'))?.source;
+    const entity = generated.find((file) => file.path.endsWith('permissions/PermissionEntity.java'))?.source;
+    const repository = generated.find((file) => file.path.endsWith('permissions/PermissionRepository.java'))?.source;
     const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
 
     expect(entity).toContain('@Entity');
+    expect(entity).toContain('package com.example.generated.permissions;');
     expect(entity).toContain('@Table(name = "permission")');
+    expect(repository).toContain('package com.example.generated.permissions;');
+    expect(repository).toContain('import com.example.generated.permissions.PermissionEntity;');
     expect(repository).toContain('JpaRepository<PermissionEntity, UUID>');
     expect(migration).toContain('CREATE TABLE permission');
+  });
+
+  it('does not turn UML interfaces into relational tables or repositories', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'contract', type: 'uml.Interface', name: 'EmailNotificationService', methods: ['+send(): void'] },
+      { id: 'account', type: 'uml.Class', name: 'Account' },
+    ], connections: [] });
+    const generated = files(analysis);
+
+    expect(analysis.relationalModel.tables.map((table) => table.name)).not.toContain('email_notification_service');
+    expect(generated.some((file) => file.path.includes('emailnotificationservices'))).toBe(false);
+    expect(generated.some((file) => file.path.endsWith('accounts/AccountRepository.java'))).toBe(true);
   });
 
   it('maps one-to-many and optional foreign keys from the relational model', () => {
@@ -51,10 +66,11 @@ describe('generatePersistence', () => {
       { id: 'customer', type: 'uml.Class', name: 'Customer' },
     ], connections: [{ id: 'orders-customer', type: 'association', sourceId: 'order', targetId: 'customer', sourceMultiplicity: '0..*', targetMultiplicity: '0..1' }] });
     const generated = files(analysis);
-    const order = generated.find((file) => file.path.endsWith('orders/entity/OrderEntity.java'))?.source;
-    const customer = generated.find((file) => file.path.endsWith('customers/entity/CustomerEntity.java'))?.source;
+    const order = generated.find((file) => file.path.endsWith('orders/OrderEntity.java'))?.source;
+    const customer = generated.find((file) => file.path.endsWith('customers/CustomerEntity.java'))?.source;
     const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(order).toContain('@ManyToOne');
+    expect(order).toContain('import com.example.generated.customers.CustomerEntity;');
     expect(order).toContain('@JoinColumn(name = "customer_id", nullable = true)');
     expect(customer).toContain('@OneToMany(mappedBy = "customer")');
     expect(migration).toContain('customer_id UUID');
@@ -67,7 +83,7 @@ describe('generatePersistence', () => {
       { id: 'course', type: 'uml.Class', name: 'Course' },
     ], connections: [{ id: 'student-course', type: 'association', sourceId: 'student', targetId: 'course', sourceMultiplicity: '0..*', targetMultiplicity: '0..*' }] });
     const generated = files(analysis);
-    const student = generated.find((file) => file.path.endsWith('students/entity/StudentEntity.java'))?.source;
+    const student = generated.find((file) => file.path.endsWith('students/StudentEntity.java'))?.source;
     const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(student).toContain('@ManyToMany');
     expect(student).toContain('@JoinTable(name = "course_student"');
@@ -84,8 +100,8 @@ describe('generatePersistence', () => {
       { id: 'team', type: 'uml.Class', name: 'Team' },
       { id: 'member', type: 'uml.Class', name: 'Member' },
     ], connections: [{ id: 'team-member', type: 'aggregation', sourceId: 'team', targetId: 'member', sourceMultiplicity: '1', targetMultiplicity: '0..*' }] });
-    const compositionOwner = files(composition).find((file) => file.path.endsWith('orders/entity/OrderEntity.java'))?.source;
-    const aggregationOwner = files(aggregation).find((file) => file.path.endsWith('teams/entity/TeamEntity.java'))?.source;
+    const compositionOwner = files(composition).find((file) => file.path.endsWith('orders/OrderEntity.java'))?.source;
+    const aggregationOwner = files(aggregation).find((file) => file.path.endsWith('teams/TeamEntity.java'))?.source;
     expect(compositionOwner).toContain('cascade = CascadeType.ALL, orphanRemoval = true');
     expect(aggregationOwner).not.toContain('CascadeType.REMOVE');
   });
@@ -95,7 +111,7 @@ describe('generatePersistence', () => {
       { id: 'profile', type: 'uml.Class', name: 'Profile' },
       { id: 'account', type: 'uml.Class', name: 'Account' },
     ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '0..1', sourceNavigable: true, targetNavigable: false }] });
-    const profile = files(oneToOne).find((file) => file.path.endsWith('profiles/entity/ProfileEntity.java'))?.source;
+    const profile = files(oneToOne).find((file) => file.path.endsWith('profiles/ProfileEntity.java'))?.source;
     const profileMigration = files(oneToOne).find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(profile).toContain('@OneToOne');
     expect(profile).toContain('@JoinColumn(name = "account_id", nullable = true)');
@@ -106,7 +122,7 @@ describe('generatePersistence', () => {
       { id: 'course', type: 'uml.Class', name: 'Course' },
       { id: 'enrollment', type: 'uml.Class', name: 'Enrollment', attributes: ['createdAt: date'] },
     ], connections: [{ id: 'student-course', type: 'association', sourceId: 'student', targetId: 'course', sourceMultiplicity: '0..*', targetMultiplicity: '0..*', associationClassId: 'enrollment' }] });
-    const enrollment = files(association).find((file) => file.path.endsWith('enrollments/entity/EnrollmentEntity.java'))?.source;
+    const enrollment = files(association).find((file) => file.path.endsWith('enrollments/EnrollmentEntity.java'))?.source;
     const associationMigration = files(association).find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(enrollment).toContain('@ManyToOne');
     expect(enrollment).not.toMatch(/public .* (id|createdAt|updatedAt);/);
@@ -124,11 +140,12 @@ describe('generatePersistence', () => {
       { id: 'invoice-status', type: 'enumUsage', sourceId: 'invoice', targetId: 'status' },
     ] });
     const generated = files(analysis);
-    const base = generated.find((file) => file.path.endsWith('documents/entity/DocumentEntity.java'))?.source;
-    const child = generated.find((file) => file.path.endsWith('invoices/entity/InvoiceEntity.java'))?.source;
+    const base = generated.find((file) => file.path.endsWith('documents/DocumentEntity.java'))?.source;
+    const child = generated.find((file) => file.path.endsWith('invoices/InvoiceEntity.java'))?.source;
     const enumFile = generated.find((file) => file.path.endsWith('common/enums/Status.java'))?.source;
     expect(base).toContain('@Inheritance(strategy = InheritanceType.JOINED)');
     expect(child).toContain('class InvoiceEntity extends DocumentEntity');
+    expect(child).toContain('import com.example.generated.documents.DocumentEntity;');
     expect(child).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(child).toContain('@Enumerated(EnumType.STRING)');
     expect(child).toContain('import com.example.generated.common.enums.Status;');
@@ -140,7 +157,7 @@ describe('generatePersistence', () => {
       { id: 'profile', type: 'uml.Class', name: 'Profile' },
       { id: 'account', type: 'uml.Class', name: 'Account' },
     ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '0..1' }] });
-    const profile = files(analysis).find((file) => file.path.endsWith('profiles/entity/ProfileEntity.java'))?.source;
+    const profile = files(analysis).find((file) => file.path.endsWith('profiles/ProfileEntity.java'))?.source;
     expect(profile).toContain('@JoinColumn(name = "account_id", nullable = true)');
   });
 

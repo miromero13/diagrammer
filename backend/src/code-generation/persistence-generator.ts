@@ -1,4 +1,4 @@
-import { featureName } from './feature-name';
+import { featureName, featurePackageName } from './feature-name';
 import { SecurityResolution } from './security-resolution';
 import { RelationalColumn, RelationalForeignKey, RelationalModel, UmlAnalysis, UmlConnection, UmlElement } from './uml-analysis';
 
@@ -148,7 +148,7 @@ const addMember = (members: Map<string, Member[]>, elementId: string, member: Me
   members.set(elementId, current);
 };
 
-const relationMemberImports = (basePackage: string, element: UmlElement) => [`${basePackage}.${featureName(element.name)}.entity.${entityName(element)}`];
+const relationMemberImports = (basePackage: string, element: UmlElement) => [`${basePackage}.${featurePackageName(element.name)}.${entityName(element)}`];
 
 const addManyToOne = (members: Map<string, Member[]>, basePackage: string, owner: UmlElement, target: UmlElement, column: string, nullable: boolean) => {
   const field = fieldFromColumn(column);
@@ -296,9 +296,9 @@ const renderEnum = (basePackage: string, enumModel: RelationalModel['enums'][num
 };
 
 const renderEntity = (basePackage: string, element: UmlElement, table: Table, members: Member[], parent: UmlElement | undefined, hasChildren: boolean) => {
-  const packageName = `${basePackage}.${featureName(element.name)}.entity`;
+  const packageName = `${basePackage}.${featurePackageName(element.name)}`;
   const imports = new Set<string>(['jakarta.persistence.Column', 'jakarta.persistence.Entity', 'jakarta.persistence.Table', `${basePackage}.common.entity.BaseEntity`]);
-  if (parent) imports.add(`${basePackage}.${featureName(parent.name)}.entity.${entityName(parent)}`);
+  if (parent) imports.add(`${basePackage}.${featurePackageName(parent.name)}.${entityName(parent)}`);
   if (hasChildren) { imports.add('jakarta.persistence.Inheritance'); imports.add('jakarta.persistence.InheritanceType'); }
   members.forEach((member) => member.imports.filter(Boolean).forEach((item) => imports.add(item.includes('.') && !item.startsWith('jakarta.') && !item.startsWith('java.') && !item.startsWith('com.') ? item : item)));
   members.forEach((member) => member.annotations.forEach((annotation) => {
@@ -325,10 +325,10 @@ const renderEntity = (basePackage: string, element: UmlElement, table: Table, me
 };
 
 const renderRepository = (basePackage: string, element: UmlElement) => {
-  const packageName = `${basePackage}.${featureName(element.name)}.repository`;
+  const packageName = `${basePackage}.${featurePackageName(element.name)}`;
   return {
     path: `src/main/java/${packagePath(packageName)}/${element.name}Repository.java`,
-    source: `package ${packageName};\n\nimport ${basePackage}.${featureName(element.name)}.entity.${entityName(element)};\nimport java.util.UUID;\nimport org.springframework.data.jpa.repository.JpaRepository;\nimport org.springframework.stereotype.Repository;\n\n@Repository\npublic interface ${element.name}Repository extends JpaRepository<${entityName(element)}, UUID> {\n}\n`,
+    source: `package ${packageName};\n\nimport ${packageName}.${entityName(element)};\nimport java.util.UUID;\nimport org.springframework.data.jpa.repository.JpaRepository;\nimport org.springframework.stereotype.Repository;\n\n@Repository\npublic interface ${element.name}Repository extends JpaRepository<${entityName(element)}, UUID> {\n}\n`,
   };
 };
 
@@ -411,7 +411,7 @@ export function generatePersistence(analysis: UmlAnalysis, basePackage: string, 
   tables.sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => {
     const element = elements.get(table.sourceElementId)!;
     const parent = inheritance.get(element.id) ? elements.get(inheritance.get(element.id)!) : undefined;
-    addFile({ path: `src/main/java/${packagePath(`${basePackage}.${featureName(element.name)}.entity`)}/${entityName(element)}.java`, source: renderEntity(basePackage, element, table, members.get(element.id) || [], parent, children.has(element.id)) });
+    addFile({ path: `src/main/java/${packagePath(`${basePackage}.${featurePackageName(element.name)}`)}/${entityName(element)}.java`, source: renderEntity(basePackage, element, table, members.get(element.id) || [], parent, children.has(element.id)) });
   });
   analysis.relationalModel.enums.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((enumModel) => addFile(renderEnum(basePackage, enumModel)));
   tables.filter((table) => elements.get(table.sourceElementId)?.kind === 'class' && elements.get(table.sourceElementId)?.id !== security.principal?.id).sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => addFile(renderRepository(basePackage, elements.get(table.sourceElementId)!)));

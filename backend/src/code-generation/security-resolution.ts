@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { dirname, join, relative, sep } from 'path';
 
-import { featureName } from './feature-name';
+import { featureName, featurePackageName } from './feature-name';
 import { UmlAnalysis, UmlElement } from './uml-analysis';
 
 export type AuthenticationConfig = {
@@ -61,7 +61,7 @@ export async function adaptCaseFiveTemplate(projectRoot: string, security: Secur
   }
 
   await renameTemplateTerms(projectRoot, [
-    ['Users', featureName(security.principal.name)], ['users', featureName(security.principal.name)],
+    ['Users', featureName(security.principal.name)], ['users', featurePackageName(security.principal.name)],
     ['User', security.principal.name], ['user', camel(security.principal.name)],
   ]);
   await adaptBasicAuthentication(projectRoot, security);
@@ -178,11 +178,13 @@ public class ${principal.name}SessionDto {
 
   const entityPackage = (await fs.readFile(entity, 'utf8')).match(/^package ([^;]+);/m)?.[1];
   if (!entityPackage) throw new Error('La entidad principal no declara un paquete Java');
-  const basePackage = entityPackage.replace(/\.entity$/, '');
+  const basePackage = entityPackage.endsWith('.entity') ? entityPackage.replace(/\.entity$/, '') : entityPackage.split('.').slice(0, -1).join('.');
+  const repositoryPackage = (await fs.readFile(repository, 'utf8')).match(/^package ([^;]+);/m)?.[1];
+  if (!repositoryPackage) throw new Error('El repositorio principal no declara un paquete Java');
   const initializer = `package ${basePackage}.config;
 
 import ${entityPackage}.${principal.name}Entity;
-import ${basePackage}.repository.${principal.name}Repository;
+import ${repositoryPackage}.${principal.name}Repository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;

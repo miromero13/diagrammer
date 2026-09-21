@@ -16,7 +16,8 @@ import { normalizeAndValidateUml, renderUmlAnalysis } from './uml-analysis';
 import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolution';
 import { generateDomainModel } from './domain-model-generator';
 import { generatePersistence } from './persistence-generator';
-import { featureName } from './feature-name';
+import { featurePackageName } from './feature-name';
+import { adaptTemplateSource, relocateTemplateFeaturePath } from './template-adaptation';
 
 const archiver: any = require('archiver');
 const exec = promisify(execFile);
@@ -124,7 +125,7 @@ export class CodeGenerationService implements OnModuleInit {
          await Promise.all(analysis.relationalModel.tables
            .map((table) => analysis.normalizedModel.elements.find((element) => element.id === table.sourceElementId))
            .filter((element): element is NonNullable<typeof element> => element?.kind === 'abstract')
-           .map((element) => fs.rm(join(projectRoot, 'src', 'main', 'java', ...basePackage.split('.'), featureName(element.name), 'model', `${element.name}.java`), { force: true })));
+            .map((element) => fs.rm(join(projectRoot, 'src', 'main', 'java', ...basePackage.split('.'), featurePackageName(element.name), `${element.name}.java`), { force: true })));
          await fs.rm(join(projectRoot, 'src', 'main', 'java', ...`com.${companySlug}.${backendName}`.split('.'), 'common', 'enums', 'GenderEnum.java'), { force: true });
          await Promise.all(persistenceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
          await this.updateStep(id, 'GENERATING_PERSISTENCE', 'COMPLETED', 'Persistencia generada');
@@ -169,8 +170,8 @@ export class CodeGenerationService implements OnModuleInit {
       for (const entry of entries) {
         if (entry.name === '.env' || entry.name === '.gradle' || entry.name === 'build' || /secret|password|credential/i.test(entry.name)) continue;
         const sourcePath = join(source, entry.name);
-        let targetRelative = relative(TEMPLATE_ROOT, sourcePath);
-        if (targetRelative.startsWith(`src${sep}main${sep}java${sep}backend`)) targetRelative = targetRelative.replace(`src${sep}main${sep}java${sep}backend`, `src${sep}main${sep}java${sep}${packagePath}`);
+        let targetRelative = relocateTemplateFeaturePath(relative(TEMPLATE_ROOT, sourcePath), packagePath);
+        if (targetRelative.startsWith('src/main/java/backend')) targetRelative = targetRelative.replace('src/main/java/backend', `src/main/java/${packagePath}`);
         if (entry.name === 'BackendApplication.java') targetRelative = join('src', 'main', 'java', packagePath, `${className}.java`);
         const targetPath = join(projectRoot, targetRelative);
         if (entry.isDirectory()) await copy(sourcePath, targetPath);
@@ -178,8 +179,7 @@ export class CodeGenerationService implements OnModuleInit {
         else {
           const data = await fs.readFile(sourcePath);
           if (/\.(java|kt|kts|md|properties|yml|yaml|xml|json|txt)$/.test(entry.name)) {
-            let text = data.toString().replace(/package backend(?=[.;])/g, `package ${packageName}`).replace(/import backend(?=[.;])/g, `import ${packageName}`);
-            text = text.replace(/\bBackendApplication\b/g, className).replace(/\bbackend\b/g, backendName).replace(/com\.example\.[a-z0-9_]+/g, packageName);
+            const text = adaptTemplateSource(data.toString(), packageName, className, backendName);
             await fs.writeFile(targetPath, text);
           } else await fs.writeFile(targetPath, data);
           if (entry.name === 'gradlew') await fs.chmod(targetPath, 0o755);

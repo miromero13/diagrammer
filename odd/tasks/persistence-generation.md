@@ -89,6 +89,16 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Progress:** Completed.
 - **Work-unit commit:** `7430ed4 fix(code-generation): centralize generated enums`.
 
+## 9. Direct lowercase feature packages
+
+- **Task ID:** `persistence-generation-direct-feature-packages-20260921`
+- **Objective:** Keep each generated table/feature in one lowercase Java package with its files directly inside it.
+- **Scope:** Co-locate entity and repository files, place UML interfaces as direct service contracts, flatten adapted authentication-template feature files, and preserve nested `common/*` infrastructure packages.
+- **Constraints:** Do not use camelCase Java package segments or feature subpackages such as `entity`, `repository`, `service`, `controller`, `dto`, or `model`.
+- **Regression coverage:** Package-name, domain-output, persistence-output, and authentication-template relocation tests cover direct paths, lowercase packages, interface placement, imports, and preserved common infrastructure.
+- **Verification:** `cd backend && npm run test -- --runInBand` passed with 10 suites and 49 tests; `cd backend && npm run build` passed; `git diff --check` passed.
+- **Progress:** Implemented; pending work-unit commit.
+
 ## Mirror status
 
 - **Repository-relative locator:** `odd/tasks/persistence-generation.md`

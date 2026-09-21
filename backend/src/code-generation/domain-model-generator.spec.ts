@@ -21,16 +21,18 @@ describe('generateDomainModel', () => {
     ], 'com.example.generated', { enabled: true, principal: account, loginField: 'email', credentialField: 'passwordHash' } as SecurityResolution);
 
     expect(files).toHaveLength(6);
-    expect(files.filter((file) => file.path.endsWith('accounts/entity/AccountEntity.java'))).toHaveLength(1);
-    expect(files.find((file) => file.path.endsWith('accounts/entity/AccountEntity.java'))?.source).toContain('@JsonIgnore');
-    expect(files.find((file) => file.path.endsWith('users/entity/UserEntity.java'))?.source).toContain('package com.example.generated.users.entity;');
-    expect(files.find((file) => file.path.endsWith('products/entity/ProductEntity.java'))?.source).toContain('package com.example.generated.products.entity;');
-    expect(files.find((file) => file.path.endsWith('auditables/model/Auditable.java'))?.source).toContain('public interface Auditable');
-    expect(files.find((file) => file.path.endsWith('documents/model/Document.java'))?.source).toContain('public abstract class Document');
+    expect(files.filter((file) => file.path.endsWith('accounts/AccountEntity.java'))).toHaveLength(1);
+    expect(files.find((file) => file.path.endsWith('accounts/AccountEntity.java'))?.source).toContain('@JsonIgnore');
+    expect(files.find((file) => file.path.endsWith('users/UserEntity.java'))?.source).toContain('package com.example.generated.users;');
+    expect(files.find((file) => file.path.endsWith('products/ProductEntity.java'))?.source).toContain('package com.example.generated.products;');
+    expect(files.find((file) => file.path.endsWith('auditables/Auditable.java'))?.source).toContain('package com.example.generated.auditables;');
+    expect(files.find((file) => file.path.endsWith('auditables/Auditable.java'))?.source).toContain('public interface Auditable');
+    expect(files.find((file) => file.path.endsWith('documents/Document.java'))?.source).toContain('package com.example.generated.documents;');
+    expect(files.find((file) => file.path.endsWith('documents/Document.java'))?.source).toContain('public abstract class Document');
     expect(files.some((file) => file.path.includes('/domain/'))).toBe(false);
-    const invoice = files.find((file) => file.path.endsWith('invoices/entity/InvoiceEntity.java'))?.source;
-    const auditable = files.find((file) => file.path.endsWith('auditables/model/Auditable.java'))?.source;
-    const document = files.find((file) => file.path.endsWith('documents/model/Document.java'))?.source;
+    const invoice = files.find((file) => file.path.endsWith('invoices/InvoiceEntity.java'))?.source;
+    const auditable = files.find((file) => file.path.endsWith('auditables/Auditable.java'))?.source;
+    const document = files.find((file) => file.path.endsWith('documents/Document.java'))?.source;
     expect(invoice).toContain('import java.math.BigDecimal;');
     expect(invoice).toContain('import java.time.LocalDate;');
     expect(invoice).toContain('import java.time.LocalDateTime;');

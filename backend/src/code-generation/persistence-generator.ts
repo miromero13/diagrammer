@@ -279,7 +279,7 @@ const scalarMember = (basePackage: string, element: UmlElement, table: Table, at
   const enumModel = enums.get(attribute.sourceType.toLowerCase());
   if (enumModel) {
     annotations.unshift('@Enumerated(EnumType.STRING)');
-    imports.push(`${basePackage}.${featureName(enumModel.name)}.model.${enumModel.name}`);
+    imports.push(`${basePackage}.common.enums.${enumModel.name}`);
   } else if (scalarImports[attribute.javaType]) imports.push(scalarImports[attribute.javaType]);
   if (security.principal?.id === element.id && security.credentialField === attribute.canonicalName) {
     annotations.unshift('@JsonIgnore');
@@ -288,7 +288,7 @@ const scalarMember = (basePackage: string, element: UmlElement, table: Table, at
 };
 
 const renderEnum = (basePackage: string, enumModel: RelationalModel['enums'][number]) => {
-  const packageName = `${basePackage}.${featureName(enumModel.name)}.model`;
+  const packageName = `${basePackage}.common.enums`;
   return {
     path: `src/main/java/${packagePath(packageName)}/${enumModel.name}.java`,
     source: `package ${packageName};\n\npublic enum ${enumModel.name} {\n${enumModel.literals.map((literal) => `    ${literal}`).join(',\n')}\n}\n`,

@@ -126,11 +126,12 @@ describe('generatePersistence', () => {
     const generated = files(analysis);
     const base = generated.find((file) => file.path.endsWith('documents/entity/DocumentEntity.java'))?.source;
     const child = generated.find((file) => file.path.endsWith('invoices/entity/InvoiceEntity.java'))?.source;
-    const enumFile = generated.find((file) => file.path.endsWith('statuss/model/Status.java'))?.source;
+    const enumFile = generated.find((file) => file.path.endsWith('common/enums/Status.java'))?.source;
     expect(base).toContain('@Inheritance(strategy = InheritanceType.JOINED)');
     expect(child).toContain('class InvoiceEntity extends DocumentEntity');
     expect(child).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(child).toContain('@Enumerated(EnumType.STRING)');
+    expect(child).toContain('import com.example.generated.common.enums.Status;');
     expect(enumFile).toContain('enum Status');
   });
 

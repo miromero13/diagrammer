@@ -79,6 +79,14 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Verification evidence:** `cd backend && npm run test -- --runInBand` passed with 8 suites and 44 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed. No Gradle commands were run.
 - **Progress:** Implemented; pending work-unit commit.
 
+## 8. Enum package layout
+
+- **Task ID:** `persistence-generation-common-enums-20260921`
+- **Objective:** Place every generated UML enum in the shared `common.enums` package.
+- **Scope:** Generate enum sources under `src/main/java/<base-package>/common/enums` and import them from entity fields using the same package.
+- **Verification:** Update persistence generation coverage for the shared path and enum import.
+- **Progress:** In progress.
+
 ## Mirror status
 
 - **Repository-relative locator:** `odd/tasks/persistence-generation.md`

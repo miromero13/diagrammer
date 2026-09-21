@@ -15,6 +15,8 @@ import { GenerateCodeDto } from './dto/generate-code.dto';
 import { normalizeAndValidateUml, renderUmlAnalysis } from './uml-analysis';
 import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolution';
 import { generateDomainModel } from './domain-model-generator';
+import { generatePersistence } from './persistence-generator';
+import { featureName } from './feature-name';
 
 const archiver: any = require('archiver');
 const exec = promisify(execFile);
@@ -27,6 +29,7 @@ const PHASE_STEPS = [
   { id: 'COPYING_TEMPLATE', label: 'Copiando plantilla' },
   { id: 'GENERATING_SECURITY', label: 'Generando autenticación y seguridad' },
   { id: 'GENERATING_DOMAIN', label: 'Generando modelo de dominio' },
+  { id: 'GENERATING_PERSISTENCE', label: 'Generando persistencia' },
   { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
@@ -47,7 +50,7 @@ export class CodeGenerationService implements OnModuleInit {
 
   async onModuleInit() {
     const pending = await this.generatedCodeRepository.find({
-      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'COMPILING', 'PACKAGING_ZIP']) },
+      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'COMPILING', 'PACKAGING_ZIP']) },
     });
 
     for (const generation of pending) {
@@ -111,10 +114,21 @@ export class CodeGenerationService implements OnModuleInit {
          const security = resolveSecurityCase(analysis, authentication);
          await adaptCaseFiveTemplate(projectRoot, security);
         await this.updateStep(id, 'GENERATING_SECURITY', 'COMPLETED', 'Autenticación y seguridad adaptadas');
-        await this.updateStep(id, 'GENERATING_DOMAIN', 'IN_PROGRESS', 'Generando modelo de dominio');
-        await Promise.all(generateDomainModel(analysis.normalizedModel.elements, `com.${companySlug}.${backendName}`, security).map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
-        await this.updateStep(id, 'GENERATING_DOMAIN', 'COMPLETED', 'Modelo de dominio generado');
-        await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
+         await this.updateStep(id, 'GENERATING_DOMAIN', 'IN_PROGRESS', 'Generando modelo de dominio');
+         await Promise.all(generateDomainModel(analysis.normalizedModel.elements, `com.${companySlug}.${backendName}`, security).map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+         await this.updateStep(id, 'GENERATING_DOMAIN', 'COMPLETED', 'Modelo de dominio generado');
+         await this.updateStep(id, 'GENERATING_PERSISTENCE', 'IN_PROGRESS', 'Generando persistencia');
+         const persistenceFiles = generatePersistence(analysis, `com.${companySlug}.${backendName}`, security);
+         await fs.rm(join(projectRoot, 'src', 'main', 'resources', 'db', 'migration'), { recursive: true, force: true });
+         const basePackage = `com.${companySlug}.${backendName}`;
+         await Promise.all(analysis.relationalModel.tables
+           .map((table) => analysis.normalizedModel.elements.find((element) => element.id === table.sourceElementId))
+           .filter((element): element is NonNullable<typeof element> => element?.kind === 'abstract')
+           .map((element) => fs.rm(join(projectRoot, 'src', 'main', 'java', ...basePackage.split('.'), featureName(element.name), 'model', `${element.name}.java`), { force: true })));
+         await fs.rm(join(projectRoot, 'src', 'main', 'java', ...`com.${companySlug}.${backendName}`.split('.'), 'common', 'enums', 'GenderEnum.java'), { force: true });
+         await Promise.all(persistenceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+         await this.updateStep(id, 'GENERATING_PERSISTENCE', 'COMPLETED', 'Persistencia generada');
+         await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');
        await this.updateStep(id, 'PACKAGING_ZIP', 'IN_PROGRESS', 'Creando ZIP');

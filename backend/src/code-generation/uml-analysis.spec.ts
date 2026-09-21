@@ -192,6 +192,14 @@ describe('UML analysis', () => {
     ]));
   });
 
+  it('rejects duplicate physical table names before persistence generation', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'first', type: 'uml.Class', name: 'UserProfile' },
+      { id: 'second', type: 'uml.Class', name: 'User_Profile' },
+    ], connections: [] });
+    expect(analysis.errors).toContain('Nombre físico de tabla duplicado: user_profile');
+  });
+
   it('derives the requested relationship FKs and records orientation', () => {
     const names = ['Payment', 'Membership', 'User', 'Role', 'Member', 'Workout', 'Trainer', 'Exercise'].map((name) => ({ id: name.toLowerCase(), type: 'uml.Class', name, attributes: ['id: int'] }));
     const pairs = [['payment', 'membership'], ['user', 'role'], ['membership', 'member'], ['workout', 'trainer'], ['exercise', 'workout']];

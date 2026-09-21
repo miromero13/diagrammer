@@ -68,7 +68,7 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Regression coverage:** Add focused tests for `Permission` feature persistence, generic User/Role relationships, and absence of template authorization artifacts in basic-JWT output.
 - **Progress:** Completed.
 - **Verification evidence:** `cd backend && npm test -- --runInBand src/code-generation/uml-analysis.spec.ts src/code-generation/security-resolution.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/persistence-generator.spec.ts src/code-generation/dto/generate-code.dto.spec.ts` passed with 5 suites and 29 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed; a representative generated User/Role/Permission project passed `./gradlew compileJava --no-daemon` (`BUILD SUCCESSFUL`, 1 task executed) and `./gradlew testClasses --no-daemon` (`BUILD SUCCESSFUL`, 3 tasks, 2 executed and 1 up-to-date). No `./gradlew test` or `./gradlew bootRun` was run.
-- **Work-unit status:** Not committed per request.
+- **Work-unit commits:** `302ac52 fix(code-generation): stop inferring auth from UML names`; `security-resolution.spec.ts` regression test recorded in the follow-up test commit.
 
 ## Mirror status
 

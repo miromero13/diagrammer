@@ -42,6 +42,7 @@ describe('basic JWT security generation', () => {
     const source = await readFile(join(javaRoot, 'service/AccountAuthService.java'), 'utf8');
     const initializer = await readFile(join(javaRoot, 'config/DataInitializer.java'), 'utf8');
     const generated = (await Promise.all((await readdir(join(root, 'src/main/java'), { recursive: true })).filter((file) => file.endsWith('.java')).map((file) => readFile(join(root, 'src/main/java', file), 'utf8')))).join('\n');
+    const generatedPaths = await readdir(join(root, 'src/main/java'), { recursive: true });
     expect(source).toContain('org.springframework.security.crypto.password.PasswordEncoder');
     expect(source).not.toContain('security.crypto.passwordHash');
     expect(generated).toContain('implements UserDetailsService');
@@ -52,6 +53,7 @@ describe('basic JWT security generation', () => {
     expect(generated).not.toContain('account.password = passwordEncoder.encode(password)');
     expect(generated).not.toContain('user.role.permissions');
     expect(generated).not.toMatch(/Role|Permission|RequirePermission/);
+    expect(generatedPaths).not.toEqual(expect.arrayContaining([expect.stringMatching(/Role|Permission|RequirePermission/)]));
     expect(await readFile(join(root, 'build.gradle.kts'), 'utf8')).not.toContain('aop');
   });
 });

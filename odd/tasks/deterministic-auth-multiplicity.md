@@ -77,6 +77,7 @@ Current: AUTH-BASIC-1 through AUTH-BASIC-5 are complete. Authentication is disab
 - `npm run build` (backend): passed (`nest build`); `git diff --check`: passed with no output. No Gradle command was run.
 - Work-unit commit: `9826744 feat(code-generation): add basic JWT authentication`.
 - AUTH-BASIC-5 verification: `npm test -- --run src/pages/diagrams/components/springboot-generation.test.ts` (frontend) passed, 1 file and 3 tests; `npm run build` (frontend) passed (`tsc` and Vite production build). No Gradle command was run.
+- Work-unit commit: `1eede33 fix(code-generation): make authentication explicit`.
 
 ## Next step
 

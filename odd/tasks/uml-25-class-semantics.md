@@ -37,7 +37,7 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 - [x] UML25-4: Add relationship endpoint, multiplicity, and composition/association semantic validation.
 - [x] UML25-5: Complete XMI round-trip and UMLDI relationship edge/waypoint handling.
 - [x] UML25-6: Add focused regression tests and update task evidence.
-- [ ] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
+- [x] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
 
 ## Acceptance Criteria
 
@@ -60,8 +60,17 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-6 complete; focused frontend XMI/member/relationship-validation tests and backend UML normalization/validation tests cover canonical abstract classes, member semantics, enum dependency compatibility, relationship semantics, and UMLDI waypoints.
+Current: UML25-7 complete; implementation, focused tests, frontend/backend builds, and diff validation passed on the current branch.
 
 ## Next Step
 
-Next: run the complete requested checks/builds, record exact results, and close the task with commit evidence.
+Next: none for the authorized scope.
+
+## Evidence
+
+- Frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` — 7 files, 34 tests passed.
+- Frontend build: `npm run build` from `frontend` — passed.
+- Backend tests: `npm test -- --runInBand src/code-generation/uml-analysis.spec.ts` from `backend` — 1 suite, 14 tests passed.
+- Backend build: `npm run build` from `backend` — passed.
+- Diff validation: `git diff --check` — passed.
+- Work-unit commits: `e8d724d`, `55e9789`, `a121c4e`, `806a638`, `b3f9923`.

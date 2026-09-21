@@ -77,7 +77,8 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Scope:** Ignore UML `id`, `createdAt`, and `updatedAt` attributes; force UUID primary/foreign keys; use the source end as the deterministic owner only when both navigability flags are absent; preserve rejection for explicit both-true/both-false ownership.
 - **Regression coverage:** UML analysis, persistence, and domain-model tests cover UUID identity, inherited audit fields, implicit one-to-one ownership, and explicit ambiguity.
 - **Verification evidence:** `cd backend && npm run test -- --runInBand` passed with 8 suites and 44 tests; `cd backend && npm run build` passed with `nest build`; `git diff --check` passed. No Gradle commands were run.
-- **Progress:** Implemented; pending work-unit commit.
+- **Progress:** Completed.
+- **Work-unit commit:** `faf859f refactor(code-generation): flatten feature packages`.
 
 ## 8. Enum package layout
 

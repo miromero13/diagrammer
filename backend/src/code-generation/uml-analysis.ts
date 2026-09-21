@@ -52,6 +52,7 @@ export type UmlElement = {
 export type UmlConnection = {
   id: string; type: string; sourceId: string; sourceName: string; targetId: string; targetName: string;
   sourceMultiplicity: string; targetMultiplicity: string; source: UmlMultiplicity; target: UmlMultiplicity;
+  sourceMultiplicityOriginal?: string; targetMultiplicityOriginal?: string;
   associationClassId?: string; associationClass?: Record<string, unknown>;
   sourceRoleName?: string; targetRoleName?: string;
   sourceNavigable?: boolean; targetNavigable?: boolean;
@@ -96,17 +97,22 @@ export type UmlAnalysis = {
 const enumType = /uml\.(?:Enumeration|Enum)|enumeration/i;
 const classType = /uml\.(?:Class|Interface|AbstractClass)|class|interface/i;
 const relationTypes = new Set(['association', 'aggregation', 'composition', 'inheritance', 'implementation', 'dependency', 'enumUsage']);
+const multiplicityPattern = /^(?:\d+|\d+\.\.(?:\d+|\*)|\*)$/;
 const validName = /^[A-Za-z_$][\w$]*$/;
 const primitiveTypes = new Set(['string', 'str', 'text', 'char', 'character', 'int', 'integer', 'long', 'float', 'double', 'decimal', 'number', 'boolean', 'bool', 'date', 'datetime', 'localdate', 'localdatetime', 'uuid', 'void']);
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const className = (value: unknown) => text(value).replace(/<<(?:interface|abstract|enumeration|enum)>>/gi, '').trim();
 const endpoint = (value: unknown) => typeof value === 'object' && value !== null ? text((value as { id?: unknown }).id) : text(value);
 const relationType = (value: unknown) => ({ association: 'association', aggregation: 'aggregation', composition: 'composition', inheritance: 'inheritance', implementation: 'implementation', dependency: 'dependency', enumusage: 'dependency' }[text(value).toLowerCase()] || text(value).toLowerCase() || 'association');
-const parseMultiplicity = (value: unknown): UmlMultiplicity => {
+const normalizeMultiplicity = (value: unknown): UmlMultiplicity | null => {
   const raw = text(value); if (!raw) return { lower: null, upper: null }; if (raw === '*') return { lower: 0, upper: null };
-  if (raw.includes('..')) { const [lower, upper] = raw.split('..'); return { lower: Number(lower), upper: upper === '*' ? null : Number(upper) }; }
-  return { lower: Number(raw), upper: Number(raw) };
+  const exact = raw.match(/^(\d+)$/); if (exact) { const number = Number(exact[1]); return { lower: number, upper: number }; }
+  const range = raw.match(/^(\d+)\.\.(\d+|\*)$/); if (!range) return null;
+  const lower = Number(range[1]), upper = range[2] === '*' ? null : Number(range[2]);
+  if (upper !== null && upper < lower) return lower === 1 && upper === 0 ? { lower: 0, upper: 1 } : null;
+  return { lower, upper };
 };
+const parseMultiplicity = (value: unknown): UmlMultiplicity => normalizeMultiplicity(value) || { lower: null, upper: null };
 const multiplicityText = ({ lower, upper }: UmlMultiplicity) => lower === null ? '' : lower === upper ? String(lower) : `${lower}..${upper === null ? '*' : upper}`;
 const parseDecoration = (value: string) => {
   const modifierMatch = value.match(/\s*\{([^}]+)\}\s*$/), modifiers = modifierMatch?.[1].split(',').map((item) => item.trim().toLowerCase()) ?? [];
@@ -173,14 +179,14 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
     elements.push({ id, name, kind, attributes, structuredAttributes, methods, structuredMethods, literals: [], ...(persistible ? { persistible } : {}), ...(raw.metadata ? { metadata: raw.metadata } : {}) });
   });
   const elementById = new Map(elements.map((element) => [element.id, element]));
-  const connections: UmlConnection[] = rawConnections.map((raw: any, index) => { const id = text(raw?.id) || `connection-${index + 1}`, sourceId = text(raw?.sourceId) || endpoint(raw?.source), targetId = text(raw?.targetId) || endpoint(raw?.target), type = relationType(raw?.type), sourceMultiplicity = text(raw?.sourceMultiplicity), targetMultiplicity = text(raw?.targetMultiplicity), source = parseMultiplicity(sourceMultiplicity), target = parseMultiplicity(targetMultiplicity); if (!relationTypes.has(type)) errors.push(`Tipo de relación no compatible: ${type}`); if (!sourceId || !ids.has(sourceId)) errors.push(`La relación ${id} tiene un origen inválido`); if (!targetId || !ids.has(targetId)) errors.push(`La relación ${id} tiene un destino inválido`); if (sourceId === targetId) errors.push(`La relación ${id} no puede conectar una clase consigo misma`); [sourceMultiplicity, targetMultiplicity].forEach((multiplicity, endpointIndex) => { if (multiplicity && !/^(?:\d+|\d+\.\.\*|\d+\.\.\d+|\*)$/.test(multiplicity)) errors.push(`Multiplicidad de ${endpointIndex ? 'destino' : 'origen'} inválida en la relación ${id}: ${multiplicity}`); }); const associationClassId = text(raw?.associationClassId) || text(raw?.associationClass?.id), associationClass = raw?.associationClass && typeof raw.associationClass === 'object' ? { ...raw.associationClass } : undefined; return { id, type, sourceId, sourceName: elementById.get(sourceId)?.name || '', targetId, targetName: elementById.get(targetId)?.name || '', sourceMultiplicity: multiplicityText(source), targetMultiplicity: multiplicityText(target), source, target, ...(associationClassId ? { associationClassId } : {}), ...(associationClass ? { associationClass } : {}) }; });
-   const classifierEndpoint = (id: string) => elementById.get(id);
-   const multiplicityIsInvalid = (value: string, parsed: UmlMultiplicity) => {
-     if (!value) return false;
-     if (!/^(?:\d+|\d+\.\.(?:\d+|\*)|\*)$/.test(value)) return true;
-     if (parsed.lower !== null && parsed.lower < 0) return true;
-     return parsed.upper !== null && parsed.lower !== null && parsed.upper < parsed.lower;
-   };
+   const connections: UmlConnection[] = rawConnections.map((raw: any, index) => { const id = text(raw?.id) || `connection-${index + 1}`, sourceId = text(raw?.sourceId) || endpoint(raw?.source), targetId = text(raw?.targetId) || endpoint(raw?.target), type = relationType(raw?.type), sourceMultiplicity = text(raw?.sourceMultiplicity), targetMultiplicity = text(raw?.targetMultiplicity), source = parseMultiplicity(sourceMultiplicity), target = parseMultiplicity(targetMultiplicity); if (!relationTypes.has(type)) errors.push(`Tipo de relación no compatible: ${type}`); if (!sourceId || !ids.has(sourceId)) errors.push(`La relación ${id} tiene un origen inválido`); if (!targetId || !ids.has(targetId)) errors.push(`La relación ${id} tiene un destino inválido`); if (sourceId === targetId) errors.push(`La relación ${id} no puede conectar una clase consigo misma`); const associationClassId = text(raw?.associationClassId) || text(raw?.associationClass?.id), associationClass = raw?.associationClass && typeof raw.associationClass === 'object' ? { ...raw.associationClass } : undefined; const normalizedSourceMultiplicity = multiplicityText(source), normalizedTargetMultiplicity = multiplicityText(target); return { id, type, sourceId, sourceName: elementById.get(sourceId)?.name || '', targetId, targetName: elementById.get(targetId)?.name || '', sourceMultiplicity: normalizedSourceMultiplicity, targetMultiplicity: normalizedTargetMultiplicity, source, target, ...(sourceMultiplicity && sourceMultiplicity !== normalizedSourceMultiplicity ? { sourceMultiplicityOriginal: sourceMultiplicity } : {}), ...(targetMultiplicity && targetMultiplicity !== normalizedTargetMultiplicity ? { targetMultiplicityOriginal: targetMultiplicity } : {}), ...(associationClassId ? { associationClassId } : {}), ...(associationClass ? { associationClass } : {}) }; });
+    const classifierEndpoint = (id: string) => elementById.get(id);
+    function multiplicityIsInvalid(value: string) {
+      if (!value) return false;
+      if (!multiplicityPattern.test(value)) return true;
+      const range = value.match(/^(\d+)\.\.(\d+)$/);
+      return Boolean(range && Number(range[2]) < Number(range[1]) && value !== '1..0');
+    }
    connections.forEach((connection) => {
      const raw = rawConnections.find((item: any) => text(item?.id) === connection.id) as any;
      const legacyEnumUsage = text(raw?.type).toLowerCase() === 'enumusage';
@@ -195,7 +201,7 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
      if (!classifierEndpoint(connection.sourceId)) errors.push(`La relación ${connection.id} tiene un origen que no es un clasificador UML compatible`);
      if (!classifierEndpoint(connection.targetId)) errors.push(`La relación ${connection.id} tiene un destino que no es un clasificador UML compatible`);
      if (connection.sourceId === connection.targetId) errors.push(`La relación ${connection.id} no puede conectar una clase consigo misma`);
-     if (multiplicityIsInvalid(text(raw?.sourceMultiplicity) || connection.sourceMultiplicity, connection.source) || multiplicityIsInvalid(text(raw?.targetMultiplicity) || connection.targetMultiplicity, connection.target)) errors.push(`La relación ${connection.id} tiene una multiplicidad inválida: use n, n..m o n..*`);
+      if (multiplicityIsInvalid(text(raw?.sourceMultiplicity) || connection.sourceMultiplicity) || multiplicityIsInvalid(text(raw?.targetMultiplicity) || connection.targetMultiplicity)) errors.push(`La relación ${connection.id} tiene una multiplicidad inválida: use n, n..m, n..* o *`);
      const sourceKind = classifierEndpoint(connection.sourceId)?.kind, targetKind = classifierEndpoint(connection.targetId)?.kind;
      const classLike = (kind?: UmlElement['kind']) => kind === 'class' || kind === 'abstract';
      if (connection.usage === 'enum') {

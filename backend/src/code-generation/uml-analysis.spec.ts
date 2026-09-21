@@ -102,6 +102,31 @@ describe('UML analysis', () => {
     expect(renderUmlAnalysis(analysis, { enabled: false })).not.toContain('..**');
   });
 
+  it('normalizes supported relationship multiplicities and preserves reversed input separately', () => {
+    const snapshot = {
+      elements: [
+        { id: 'a', type: 'uml.Class', name: 'A' },
+        { id: 'b', type: 'uml.Class', name: 'B' },
+        { id: 'c', type: 'uml.Class', name: 'C' },
+        { id: 'd', type: 'uml.Class', name: 'D' },
+      ],
+      connections: [
+        { id: 'exact-range', type: 'association', sourceId: 'a', targetId: 'b', sourceMultiplicity: '2', targetMultiplicity: '2..3' },
+        { id: 'unbounded', type: 'association', sourceId: 'c', targetId: 'd', sourceMultiplicity: '3..*', targetMultiplicity: '*' },
+        { id: 'reversed-alias', type: 'association', sourceId: 'a', targetId: 'c', sourceMultiplicity: '1..0', targetMultiplicity: '0..*' },
+      ],
+    };
+    const analysis = normalizeAndValidateUml(snapshot);
+
+    expect(analysis.errors).toEqual([]);
+    expect(snapshot.connections[2]).toMatchObject({ sourceMultiplicity: '1..0', targetMultiplicity: '0..*' });
+    expect(analysis.connections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'exact-range', source: { lower: 2, upper: 2 }, target: { lower: 2, upper: 3 } }),
+      expect.objectContaining({ id: 'unbounded', source: { lower: 3, upper: null }, target: { lower: 0, upper: null }, targetMultiplicity: '0..*' }),
+      expect.objectContaining({ id: 'reversed-alias', source: { lower: 0, upper: 1 }, sourceMultiplicity: '0..1', sourceMultiplicityOriginal: '1..0', target: { lower: 0, upper: null } }),
+    ]));
+  });
+
   it('creates association-class and joined-inheritance tables', () => {
     const analysis = normalizeAndValidateUml({
       elements: [
@@ -252,5 +277,17 @@ describe('UML analysis', () => {
       expect.stringContaining('multiplicidad inválida'),
       expect.stringContaining('composición'),
     ]));
+  });
+
+  it('rejects malformed multiplicity syntax as well as invalid semantic ranges', () => {
+    const analysis = normalizeAndValidateUml({
+      elements: [{ id: 'a', type: 'uml.Class', name: 'A' }, { id: 'b', type: 'uml.Class', name: 'B' }],
+      connections: [
+        { id: 'malformed', type: 'association', sourceId: 'a', targetId: 'b', sourceMultiplicity: 'many', targetMultiplicity: '1...0' },
+        { id: 'reversed', type: 'association', sourceId: 'a', targetId: 'b', sourceMultiplicity: '2..1', targetMultiplicity: '1' },
+      ],
+    });
+
+    expect(analysis.errors.filter((error) => error.includes('multiplicidad'))).toHaveLength(2);
   });
 });

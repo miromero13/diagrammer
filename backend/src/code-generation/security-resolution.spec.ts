@@ -3,7 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolution';
-import { UmlAnalysis } from './uml-analysis';
+import { normalizeAndValidateUml, UmlAnalysis } from './uml-analysis';
 
 const element = (id: string, name: string, attributes = ['email:String', 'password:String']) => ({
   id, name, kind: 'class' as const, attributes, literals: [], persistible: true, metadata: {},
@@ -20,6 +20,29 @@ describe('resolveSecurityCase', () => {
   it('resolves the template topology as case 5', () => {
     const principal = element('principal', 'Account'); const role = element('role', 'Role', []); const permission = element('permission', 'Permission', []);
     expect(resolveSecurityCase(analysis([principal, role, permission], [connection('principal', 'role', true, false), connection('role', 'permission', true, true)]), { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' }).case).toBe(5);
+  });
+
+  it('resolves case 5 from normalized 1..0 and 0..* multiplicities without AI', () => {
+    const umlAnalysis = normalizeAndValidateUml({
+      elements: [
+        { id: 'principal', type: 'uml.Class', name: 'Account', attributes: ['email:String', 'password:String'] },
+        { id: 'role', type: 'uml.Class', name: 'Role' },
+        { id: 'permission', type: 'uml.Class', name: 'Permission' },
+      ],
+      connections: [
+        { id: 'account-role', type: 'association', sourceId: 'principal', targetId: 'role', sourceMultiplicity: '0..*', targetMultiplicity: '1..0' },
+        { id: 'role-permission', type: 'association', sourceId: 'role', targetId: 'permission', sourceMultiplicity: '0..*', targetMultiplicity: '0..*' },
+      ],
+    });
+
+    expect(umlAnalysis.errors).toEqual([]);
+    expect(umlAnalysis.connections.find((connection) => connection.id === 'account-role')).toMatchObject({
+      source: { lower: 0, upper: null },
+      target: { lower: 0, upper: 1 },
+      targetMultiplicity: '0..1',
+      targetMultiplicityOriginal: '1..0',
+    });
+    expect(resolveSecurityCase(umlAnalysis, { enabled: true, principalClassId: 'principal', roleClassId: 'role', permissionClassId: 'permission' }).case).toBe(5);
   });
 
   it('detects common login and credential names, then falls back to email and password', () => {

@@ -1,4 +1,4 @@
-import { UmlAnalysis, UmlConnection, UmlElement } from './uml-analysis';
+import { UmlAnalysis, UmlConnection, UmlElement, UmlMultiplicity } from './uml-analysis';
 import { promises as fs } from 'fs';
 import { dirname, join, relative, sep } from 'path';
 
@@ -53,7 +53,8 @@ const selected = (analysis: UmlAnalysis, id: unknown, label: string, required = 
   return element;
 };
 
-const hasMany = (multiplicity: { upper: number | null }) => multiplicity.upper === null || multiplicity.upper > 1;
+// UML analysis canonicalizes relationship multiplicities before security resolution.
+const hasMany = (multiplicity: UmlMultiplicity) => multiplicity.lower !== null && (multiplicity.upper === null || multiplicity.upper > 1);
 
 const relation = (analysis: UmlAnalysis, left: UmlElement, right: UmlElement): UmlConnection | undefined =>
   analysis.connections.find((connection) =>

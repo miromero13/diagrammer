@@ -40,6 +40,7 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 - [x] UML25-7: Run frontend/backend checks, build, diff validation, and record commits.
 - [x] UML25-8: Make the element editor responsive, aligned, and scrollable on small viewports.
 - [x] UML25-9: Scope member modifiers to valid UML contexts and prevent invalid static/abstract combinations.
+- [x] UML25-10: Simplify the editor to basic UML fields with large inputs and vertical-only overflow.
 
 ## Acceptance Criteria
 
@@ -62,11 +63,11 @@ Bring the class-diagram editor closer to a consistent UML 2.5.1 subset across th
 
 ## Progress
 
-Current: UML25-9 complete; the follow-up editor correction passed focused frontend verification.
+Current: UML25-10 complete; the editor now exposes readable basic fields, preserves hidden member semantics, and uses vertical-only scrolling.
 
 ## Next Step
 
-Next: none for the authorized scope.
+Next: parent work-unit commit after final inspection.
 
 ## Evidence
 
@@ -83,3 +84,6 @@ Next: none for the authorized scope.
 - Follow-up frontend build: `npm run build` from `frontend` — passed.
 - Follow-up diff validation: `git diff --check` from the repository root — passed.
 - Implementation commit: `da9d109` (`fix(diagrams): make UML editor responsive`).
+- UML25-10 focused frontend tests: `npm test -- --run src/pages/diagrams/uml-member-format.test.ts src/pages/diagrams/services/diagram-xmi.test.ts src/pages/diagrams/uml-relationship-validation.test.ts src/pages/diagrams/components/diagram-elements-sidebar.test.tsx src/pages/diagrams/components/diagram-canvas.test.ts src/pages/diagrams/handle-distribution.test.ts src/pages/diagrams/many-to-many.test.ts` from `frontend` — 7 files, 36 tests passed.
+- UML25-10 frontend build: `npm run build` from `frontend` — passed.
+- UML25-10 diff validation: `git diff --check` from the repository root — passed.

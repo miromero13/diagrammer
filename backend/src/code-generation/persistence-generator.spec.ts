@@ -45,6 +45,11 @@ describe('generatePersistence', () => {
     expect(userTable?.columns.map((column) => column.name)).toContain('user');
     expect(user).toContain('@Table(name = "users")');
     expect(migration).toContain('REFERENCES users (id)');
+    const firstForeignKey = migration!.indexOf('ALTER TABLE admin ADD CONSTRAINT fk_admin_user_id_users FOREIGN KEY (user_id) REFERENCES users (id);');
+    expect(firstForeignKey).toBeGreaterThan(migration!.lastIndexOf('CREATE TABLE'));
+    expect(migration!.indexOf('CREATE TABLE admin')).toBeLessThan(migration!.indexOf('CREATE TABLE users'));
+    expect(migration!.slice(migration!.indexOf('CREATE TABLE admin'), migration!.indexOf(');', migration!.indexOf('CREATE TABLE admin')))).not.toContain('FOREIGN KEY');
+    expect(migration!.indexOf('CREATE INDEX idx_admin_user_id')).toBeGreaterThan(firstForeignKey);
   });
 
   it('generates Permission as a normal feature entity, repository, and table', () => {
@@ -106,6 +111,11 @@ describe('generatePersistence', () => {
     expect(student).toContain('@JoinTable(name = "course_student"');
     expect(migration).toContain('CREATE TABLE course_student');
     expect(migration).toContain('PRIMARY KEY (student_id, course_id)');
+    const joinTableStart = migration!.indexOf('CREATE TABLE course_student');
+    expect(migration!.slice(joinTableStart, migration!.indexOf(');', joinTableStart))).not.toContain('FOREIGN KEY');
+    const firstForeignKey = migration!.indexOf('ALTER TABLE course_student ADD CONSTRAINT fk_course_student_course FOREIGN KEY (course_id) REFERENCES course (id);');
+    expect(firstForeignKey).toBeGreaterThan(migration!.lastIndexOf('CREATE TABLE'));
+    expect(migration).toContain('ALTER TABLE course_student ADD CONSTRAINT fk_course_student_student FOREIGN KEY (student_id) REFERENCES student (id);');
   });
 
   it('keeps aggregation non-destructive and cascades composition collections', () => {

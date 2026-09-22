@@ -359,8 +359,10 @@ const sqlType = (column: RelationalColumn, enums: Map<string, RelationalModel['e
 const renderMigration = (analysis: UmlAnalysis, security: SecurityResolution, syntheticColumns: SyntheticColumn[], syntheticForeignKeys: RelationalForeignKey[], joinTables: JoinTable[], associationPairs: Array<{ table: string; columns: string[] }>) => {
   const enums = enumMap(analysis);
   const tables = [...analysis.relationalModel.tables].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedJoinTables = [...joinTables].sort((a, b) => a.name.localeCompare(b.name));
   const foreignKeys = [...analysis.relationalModel.relationships.flatMap((relation) => relation.foreignKeys), ...syntheticForeignKeys];
   const foreignKeyMap = new Map(foreignKeys.map((foreignKey) => [`${foreignKey.table}.${foreignKey.column}.${foreignKey.referencedTable}`, foreignKey]));
+  const sortedForeignKeys = [...foreignKeyMap.values()].sort((a, b) => `${a.table}.${a.column}.${a.referencedTable}`.localeCompare(`${b.table}.${b.column}.${b.referencedTable}`));
   const lines: string[] = [];
   tables.forEach((table) => {
     const columns = table.columns.filter((column) => !['created_at', 'updated_at'].includes(column.name)).sort((a, b) => (a.name === 'id' ? -1 : b.name === 'id' ? 1 : a.name.localeCompare(b.name)));
@@ -376,18 +378,24 @@ const renderMigration = (analysis: UmlAnalysis, security: SecurityResolution, sy
     const login = security.enabled && security.principal?.id === table.sourceElementId ? table.columns.find((column) => column.canonicalName === security.loginField) : undefined;
     if (login) definitions.set('__login__', `    CONSTRAINT uk_${table.name}_${login.name} UNIQUE (${login.name})`);
     associationPairs.filter((pair) => pair.table === table.name).forEach((pair) => definitions.set(`__assoc_${pair.columns.join('_')}`, `    CONSTRAINT uk_${table.name}_${pair.columns.join('_')} UNIQUE (${pair.columns.join(', ')})`));
-    [...foreignKeyMap.values()].filter((foreignKey) => foreignKey.table === table.name).sort((a, b) => a.column.localeCompare(b.column)).forEach((foreignKey) => definitions.set(`__fk_${foreignKey.column}_${foreignKey.referencedTable}`, `    CONSTRAINT fk_${table.name}_${foreignKey.column}_${foreignKey.referencedTable} FOREIGN KEY (${foreignKey.column}) REFERENCES ${foreignKey.referencedTable} (id)`));
     lines.push(`CREATE TABLE ${table.name} (\n${[...definitions.values()].join(',\n')}\n);`);
-    table.columns.filter((column) => column.enumName).forEach((column) => {
+  });
+  sortedJoinTables.forEach((join) => {
+    lines.push(`CREATE TABLE ${join.name} (\n    ${join.sourceColumn} UUID NOT NULL,\n    ${join.targetColumn} UUID NOT NULL,\n    CONSTRAINT pk_${join.name} PRIMARY KEY (${join.sourceColumn}, ${join.targetColumn})\n);`);
+  });
+  tables.forEach((table) => {
+    table.columns.filter((column) => column.enumName).sort((a, b) => a.name.localeCompare(b.name)).forEach((column) => {
       const enumModel = enums.get(column.enumName!.toLowerCase());
       if (enumModel) lines.push(`ALTER TABLE ${table.name} ADD CONSTRAINT ck_${table.name}_${column.name}_enum CHECK (${column.name} IN (${enumModel.literals.map((literal) => `'${literal}'`).join(', ')}));`);
     });
   });
-  joinTables.sort((a, b) => a.name.localeCompare(b.name)).forEach((join) => {
-    lines.push(`CREATE TABLE ${join.name} (\n    ${join.sourceColumn} UUID NOT NULL,\n    ${join.targetColumn} UUID NOT NULL,\n    CONSTRAINT pk_${join.name} PRIMARY KEY (${join.sourceColumn}, ${join.targetColumn}),\n    CONSTRAINT fk_${join.name}_${join.sourceTable} FOREIGN KEY (${join.sourceColumn}) REFERENCES ${join.sourceTable} (id),\n    CONSTRAINT fk_${join.name}_${join.targetTable} FOREIGN KEY (${join.targetColumn}) REFERENCES ${join.targetTable} (id)\n);`);
+  sortedForeignKeys.forEach((foreignKey) => lines.push(`ALTER TABLE ${foreignKey.table} ADD CONSTRAINT fk_${foreignKey.table}_${foreignKey.column}_${foreignKey.referencedTable} FOREIGN KEY (${foreignKey.column}) REFERENCES ${foreignKey.referencedTable} (id);`));
+  sortedJoinTables.forEach((join) => {
+    lines.push(`ALTER TABLE ${join.name} ADD CONSTRAINT fk_${join.name}_${join.sourceTable} FOREIGN KEY (${join.sourceColumn}) REFERENCES ${join.sourceTable} (id);`);
+    lines.push(`ALTER TABLE ${join.name} ADD CONSTRAINT fk_${join.name}_${join.targetTable} FOREIGN KEY (${join.targetColumn}) REFERENCES ${join.targetTable} (id);`);
   });
-  [...foreignKeyMap.values()].sort((a, b) => `${a.table}.${a.column}`.localeCompare(`${b.table}.${b.column}`)).forEach((foreignKey) => lines.push(`CREATE INDEX idx_${foreignKey.table}_${foreignKey.column} ON ${foreignKey.table} (${foreignKey.column});`));
-  joinTables.sort((a, b) => a.name.localeCompare(b.name)).forEach((join) => lines.push(`CREATE INDEX idx_${join.name}_${join.sourceColumn} ON ${join.name} (${join.sourceColumn});`));
+  sortedForeignKeys.forEach((foreignKey) => lines.push(`CREATE INDEX idx_${foreignKey.table}_${foreignKey.column} ON ${foreignKey.table} (${foreignKey.column});`));
+  sortedJoinTables.forEach((join) => lines.push(`CREATE INDEX idx_${join.name}_${join.sourceColumn} ON ${join.name} (${join.sourceColumn});`));
   return `${lines.join('\n\n')}\n`;
 };
 

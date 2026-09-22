@@ -55,11 +55,24 @@ const relationFieldsByElement = (analysis: UmlAnalysis) => {
   const add = (element: UmlElement, relation: GeneratedRelation) => direct.set(element.id, [...(direct.get(element.id) || []), relation]);
 
   analysis.normalizedModel.relationships.filter((connection) => relationKind(connection.type)).forEach((connection) => {
-    if (connection.associationClassId) return;
     const source = elements.get(connection.sourceId), target = elements.get(connection.targetId);
     if (!source || !target || !classLike(source) || !classLike(target) || !tables.has(source.id) || !tables.has(target.id)) return;
     const sourceMany = collection(connection.source), targetMany = collection(connection.target);
     const model = relational.get(connection.id);
+
+    if (connection.associationClassId) {
+      const association = elements.get(connection.associationClassId), associationTable = association && tables.get(association.id);
+      if (!association || !associationTable || !model) return;
+      model.foreignKeys.forEach((foreignKey) => {
+        const targetId = [...tables.entries()].find(([, table]) => table.name === foreignKey.referencedTable)?.[0];
+        const related = targetId ? elements.get(targetId) : undefined;
+        if (!related) return;
+        const column = associationTable.columns.find((candidate) => candidate.name === foreignKey.column);
+        add(association, { fieldName: fieldFromColumn(foreignKey.column), target: related, collection: false, writable: true, required: column?.nullable === false });
+        add(related, { fieldName: featureName(association.name), target: association, collection: true, writable: false, required: false });
+      });
+      return;
+    }
 
     if (sourceMany && targetMany) {
       add(source, { fieldName: featureName(target.name), target, collection: true, writable: true, required: false });
@@ -102,10 +115,11 @@ const relationFieldsByElement = (analysis: UmlAnalysis) => {
   return { elements, parents, direct };
 };
 
-export const generatedRelationFields = (analysis: UmlAnalysis, element: UmlElement): GeneratedRelation[] => {
+export const generatedRelationFields = (analysis: UmlAnalysis, element: UmlElement, includeInherited = true): GeneratedRelation[] => {
   const { elements, parents, direct } = relationFieldsByElement(analysis);
   const seen = new Set<string>();
-  return hierarchy(element, elements, parents).flatMap((owner) => direct.get(owner.id) || []).filter((relation) => {
+  const owners = includeInherited ? hierarchy(element, elements, parents) : [element];
+  return owners.flatMap((owner) => direct.get(owner.id) || []).filter((relation) => {
     const name = relation.collection ? `${relation.fieldName}Ids` : `${relation.fieldName}Id`;
     if (seen.has(name)) return false;
     seen.add(name);
@@ -113,10 +127,11 @@ export const generatedRelationFields = (analysis: UmlAnalysis, element: UmlEleme
   });
 };
 
-const scalarAttributes = (analysis: UmlAnalysis, element: UmlElement, enumNames: Set<string>) => {
+const scalarAttributes = (analysis: UmlAnalysis, element: UmlElement, enumNames: Set<string>, includeInherited = true) => {
   const elements = new Map(analysis.normalizedModel.elements.map((candidate) => [candidate.id, candidate]));
   const tables = new Map(analysis.relationalModel.tables.map((table) => [table.sourceElementId, table]));
-  return hierarchy(element, elements, inheritanceParents(analysis)).flatMap((owner) => {
+  const owners = includeInherited ? hierarchy(element, elements, inheritanceParents(analysis)) : [element];
+  return owners.flatMap((owner) => {
     const table = tables.get(owner.id);
     return table ? owner.structuredAttributes
       .filter((attribute) => !baseEntityAttributes.has(attribute.canonicalName))
@@ -126,15 +141,22 @@ const scalarAttributes = (analysis: UmlAnalysis, element: UmlElement, enumNames:
     .sort((a, b) => fieldName(a).localeCompare(fieldName(b)) || a.sourceName.localeCompare(b.sourceName));
 };
 
+const persistedParent = (analysis: UmlAnalysis, element: UmlElement) => {
+  const parentId = inheritanceParents(analysis).get(element.id);
+  const parent = parentId ? analysis.normalizedModel.elements.find((candidate) => candidate.id === parentId) : undefined;
+  const tables = new Set(analysis.relationalModel.tables.map((table) => table.sourceElementId));
+  return parent && classLike(parent) && tables.has(parent.id) ? parent : undefined;
+};
+
 const renderImports = (imports: Set<string>) => [...imports].sort().map((item) => `import ${item};`).join('\n');
 
-const renderDto = (packageName: string, name: string, fields: string[], imports: Set<string>) => [
+const renderDto = (packageName: string, name: string, fields: string[], imports: Set<string>, parent?: string) => [
   `package ${packageName};`,
   '',
   renderImports(imports),
   '',
   `@Schema(description = "${name} API schema")`,
-  `public class ${name} {`,
+  `public class ${name}${parent ? ` extends ${parent}` : ''} {`,
   fields.map((field) => `    ${field}`).join('\n'),
   '}',
   '',
@@ -220,21 +242,31 @@ export function generateDtos(analysis: UmlAnalysis, basePackage: string): Genera
       const element = analysis.normalizedModel.elements.find((candidate) => candidate.id === table.sourceElementId);
       if (!element || (element.kind !== 'class' && element.kind !== 'abstract')) return;
       const attributes = scalarAttributes(analysis, element, enumNames);
+      const declaredAttributes = scalarAttributes(analysis, element, enumNames, false);
       const relations = generatedRelationFields(analysis, element);
+      const declaredRelations = generatedRelationFields(analysis, element, false);
+      const parent = persistedParent(analysis, element);
       const dtoPackage = `${basePackage}.${featurePackageName(element.name)}.dto`;
       const mapperPackage = `${basePackage}.${featurePackageName(element.name)}.mapper`;
       const typeFor = (attribute: UmlAttribute) => renderedType(attribute.sourceType, elements);
       const commonImports = new Set<string>(['io.swagger.v3.oas.annotations.media.Schema']);
-      attributes.forEach((attribute) => importForType(attribute.sourceType, elements, basePackage, commonImports));
+      declaredAttributes.forEach((attribute) => importForType(attribute.sourceType, elements, basePackage, commonImports));
 
       const createImports = new Set(commonImports);
       const updateImports = new Set(commonImports);
       const responseImports = new Set(['java.util.UUID', ...commonImports]);
       const queryImports = new Set<string>(['io.swagger.v3.oas.annotations.media.Schema']);
+      if (parent) {
+        const parentDtoPackage = `${basePackage}.${featurePackageName(parent.name)}.dto`;
+        createImports.add(`${parentDtoPackage}.${dtoName('Create', parent)}`);
+        updateImports.add(`${parentDtoPackage}.${dtoName('Update', parent)}`);
+        responseImports.add(`${parentDtoPackage}.${parent.name}ResponseDto`);
+      }
+      const responseIdentity = parent ? [] : ['@Schema(description = "Entity identifier", format = "uuid", accessMode = Schema.AccessMode.READ_ONLY)\n    public UUID id;'];
       files.push(
-        { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Create', element)}.java`, source: renderDto(dtoPackage, dtoName('Create', element), [...dtoFields(attributes, typeFor, true, createImports), ...relationDtoFields(relations, 'request', true, createImports)], createImports) },
-        { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Update', element)}.java`, source: renderDto(dtoPackage, dtoName('Update', element), [...dtoFields(attributes, typeFor, false, updateImports), ...relationDtoFields(relations, 'request', false, updateImports)], updateImports) },
-        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}ResponseDto.java`, source: renderDto(dtoPackage, `${element.name}ResponseDto`, ['@Schema(description = "Entity identifier", format = "uuid", accessMode = Schema.AccessMode.READ_ONLY)\n    public UUID id;', ...dtoFields(attributes, typeFor, false, responseImports), ...relationDtoFields(relations, 'response', false, responseImports)], responseImports) },
+        { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Create', element)}.java`, source: renderDto(dtoPackage, dtoName('Create', element), [...dtoFields(declaredAttributes, typeFor, true, createImports), ...relationDtoFields(declaredRelations, 'request', true, createImports)], createImports, parent ? dtoName('Create', parent) : undefined) },
+        { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Update', element)}.java`, source: renderDto(dtoPackage, dtoName('Update', element), [...dtoFields(declaredAttributes, typeFor, false, updateImports), ...relationDtoFields(declaredRelations, 'request', false, updateImports)], updateImports, parent ? dtoName('Update', parent) : undefined) },
+        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}ResponseDto.java`, source: renderDto(dtoPackage, `${element.name}ResponseDto`, [...responseIdentity, ...dtoFields(declaredAttributes, typeFor, false, responseImports), ...relationDtoFields(declaredRelations, 'response', false, responseImports)], responseImports, parent ? `${parent.name}ResponseDto` : undefined) },
         { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}QueryDto.java`, source: renderDto(dtoPackage, `${element.name}QueryDto`, ['@Schema(description = "Zero-based page number")\n    public Integer page;', '@Schema(description = "Maximum number of resources to return")\n    public Integer size;'], queryImports) },
       );
 

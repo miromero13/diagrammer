@@ -76,13 +76,19 @@ describe('generateDtos', () => {
     const response = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/dto/AdminResponseDto.java'))?.source;
     const mapper = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/mapper/AdminMapper.java'))?.source;
 
-    expect(create).toContain('public String name;');
+    expect(create).toContain('public class CreateAdminDto extends CreateUserDto {');
+    expect(create).not.toContain('public String name;');
     expect(create).toContain('public Integer level;');
     expect(create).toContain('public UUID departmentId;');
     expect(create).toContain('@NotNull');
     expect(create).not.toContain('userId');
+    expect(update).toContain('public class UpdateAdminDto extends UpdateUserDto {');
+    expect(update).not.toContain('public String name;');
     expect(update).toContain('public UUID departmentId;');
     expect(update).not.toContain('requiredMode = Schema.RequiredMode.REQUIRED');
+    expect(response).toContain('public class AdminResponseDto extends UserResponseDto {');
+    expect(response).not.toContain('public String name;');
+    expect(response).not.toContain('public UUID id;');
     expect(response).toContain('public UUID departmentId;');
     expect(response).toContain('accessMode = Schema.AccessMode.READ_ONLY');
     expect(mapper).toContain('response.departmentId = entity.department == null ? null : entity.department.getId();');
@@ -116,5 +122,33 @@ describe('generateDtos', () => {
 
     expect(profileCreate).not.toContain('accountId');
     expect(accountResponse).not.toContain('profileId');
+  });
+
+  it('generates DTO relation IDs for materialized many-to-many association classes', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'role', type: 'uml.Class', name: 'Role' },
+      { id: 'permission', type: 'uml.Class', name: 'Permission' },
+      { id: 'role-permission', type: 'uml.Class', name: 'RolePermission' },
+    ], connections: [{
+      id: 'role-permission-link',
+      type: 'association',
+      sourceId: 'role',
+      targetId: 'permission',
+      sourceMultiplicity: '0..*',
+      targetMultiplicity: '0..*',
+      associationClassId: 'role-permission',
+    }] });
+    const files = generateDtos(analysis, 'com.example.generated');
+    const create = files.find((file) => file.path.endsWith('rolepermissions/dto/CreateRolePermissionDto.java'))?.source;
+    const mapper = files.find((file) => file.path.endsWith('rolepermissions/mapper/RolePermissionMapper.java'))?.source;
+    const roleResponse = files.find((file) => file.path.endsWith('roles/dto/RoleResponseDto.java'))?.source;
+
+    expect(create).toContain('public UUID roleId;');
+    expect(create).toContain('public UUID permissionId;');
+    expect(create).toContain('@Schema(description = "roleId relation ID", requiredMode = Schema.RequiredMode.REQUIRED)');
+    expect(create).toContain('@Schema(description = "permissionId relation ID", requiredMode = Schema.RequiredMode.REQUIRED)');
+    expect(mapper).toContain('response.roleId = entity.role == null ? null : entity.role.getId();');
+    expect(mapper).toContain('response.permissionId = entity.permission == null ? null : entity.permission.getId();');
+    expect(roleResponse).toContain('public List<UUID> rolePermissionsIds;');
   });
 });

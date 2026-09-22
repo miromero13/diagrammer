@@ -14,6 +14,8 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 - Represent owning-side `ManyToOne`/`OneToOne` relationships with UUID IDs.
 - Represent collection relationships with UUID ID collections where the generated model owns them.
 - Resolve relationship IDs in generated services and keep response DTOs cycle-safe.
+- Generate child DTOs with Java `extends` instead of copying inherited fields.
+- Generate CRUD DTO/service/controller support for materialized many-to-many association classes.
 - Preserve the current simple scalar mapper behavior.
 
 ## Constraints
@@ -35,6 +37,8 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 - [x] DR-1 Build effective inherited DTO attributes and relationship ID fields for create, update, and response DTOs.
 - [x] DR-2 Generate service-side relationship resolution while preserving scalar mapper behavior and null/update semantics.
 - [x] DR-3 Add focused tests for inheritance, singular relations, collection relations, required IDs, and generated service wiring.
+- [x] DR-4 Generate association-class relation IDs and CRUD wiring for materialized many-to-many links.
+- [x] DR-5 Render child create/update/response DTOs with `extends` and keep inherited fields out of child bodies.
 
 ## Acceptance criteria
 
@@ -59,7 +63,7 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 
 ## Verification record
 
-- Focused generator tests — 72 passed.
+- Focused generator tests — 75 passed.
 - `npm run build` — passed.
 - `git diff --check` — passed.
 - Legacy template adaptation path and unrelated worktree changes — preserved.
@@ -68,3 +72,5 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 ## Bounded behavior
 
 - Writable relationships targeting entities without generated repositories now fail generation explicitly with the relation and target name instead of emitting uncompilable service wiring.
+- Materialized association classes receive their own relation-ID DTOs and CRUD generation; endpoint DTO responses expose read-only association-class ID collections.
+- Child DTO declarations extend persisted parent DTOs; inherited fields and relation mappings remain available to generated mappers without synthetic parent IDs.

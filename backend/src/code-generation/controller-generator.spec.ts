@@ -59,4 +59,23 @@ describe('generateControllers', () => {
     expect(generated[0].source).toContain('responseCode = "401"');
     expect(generated[0].source).toContain('responseCode = "403"');
   });
+
+  it('generates CRUD controller support for materialized association classes', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'role', type: 'uml.Class', name: 'Role' },
+      { id: 'permission', type: 'uml.Class', name: 'Permission' },
+      { id: 'role-permission', type: 'uml.Class', name: 'RolePermission' },
+    ], connections: [{
+      id: 'role-permission-link',
+      type: 'association',
+      sourceId: 'role',
+      targetId: 'permission',
+      sourceMultiplicity: '0..*',
+      targetMultiplicity: '0..*',
+      associationClassId: 'role-permission',
+    }] });
+    const generated = generateControllers(analysis, 'com.example.generated', noSecurity);
+
+    expect(generated.some((file) => file.path.endsWith('rolepermissions/controller/RolePermissionController.java'))).toBe(true);
+  });
 });

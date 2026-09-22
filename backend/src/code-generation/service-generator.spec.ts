@@ -111,4 +111,28 @@ describe('generateServices', () => {
       'writable relation Order.account targets Account, but no repository is generated for Account',
     );
   });
+
+  it('resolves both foreign keys for an association-class service', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'role', type: 'uml.Class', name: 'Role' },
+      { id: 'permission', type: 'uml.Class', name: 'Permission' },
+      { id: 'role-permission', type: 'uml.Class', name: 'RolePermission' },
+    ], connections: [{
+      id: 'role-permission-link',
+      type: 'association',
+      sourceId: 'role',
+      targetId: 'permission',
+      sourceMultiplicity: '0..*',
+      targetMultiplicity: '0..*',
+      associationClassId: 'role-permission',
+    }] });
+    const implementation = generateServices(analysis, 'com.example.generated', noSecurity)
+      .find((file) => file.path.endsWith('rolepermissions/service/RolePermissionServiceImpl.java'))?.source;
+
+    expect(implementation).toContain('import com.example.generated.roles.RoleRepository;');
+    expect(implementation).toContain('import com.example.generated.permissions.PermissionRepository;');
+    expect(implementation).toContain('RolePermissionServiceImpl(RolePermissionRepository repository, RolePermissionMapper mapper, PermissionRepository permissionRepository, RoleRepository roleRepository)');
+    expect(implementation).toContain('roleRepository.findById(dto.roleId)');
+    expect(implementation).toContain('permissionRepository.findById(dto.permissionId)');
+  });
 });

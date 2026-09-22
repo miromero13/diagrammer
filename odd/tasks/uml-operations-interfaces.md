@@ -51,7 +51,8 @@ Generate Java operations and type contracts from normalized UML while keeping in
 - **Verification:** `cd backend && npm test -- --runInBand code-generation/domain-model-generator.spec.ts code-generation/uml-analysis.spec.ts code-generation/persistence-generator.spec.ts` — 3 suites and 49 tests passed. `cd backend && npm run build` — passed. `git diff --check` — passed. Gradle tests and `bootRun` were not run per constraint.
 - **Runtime harness:** N/A — this unit is backend source generation; `bootRun` remains intentionally excluded.
 - **Rollback boundary:** Revert the Phase 6 generator, analysis, focused-spec, and task-document changes in this unit; unrelated working-tree files are outside the boundary.
-- **Next step:** Commit this work unit after excluding unrelated working-tree files.
+- **Commit:** `251812a` — `feat(code-generation): generate UML operations and interfaces`.
+- **Next step:** None for Phase 6; delivery follows the selected stacked-to-main strategy.
 
 ## Mirror status
 

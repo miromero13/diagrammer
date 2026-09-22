@@ -108,7 +108,7 @@ const implementationSource = (basePackage: string, element: UmlElement) => {
   ].join('\n');
 };
 
-const repositoryTables = (analysis: UmlAnalysis, security: SecurityResolution) => {
+export const eligibleCrudElements = (analysis: UmlAnalysis, security: SecurityResolution) => {
   const elements = new Map(analysis.normalizedModel.elements.map((element) => [element.id, element]));
   return analysis.relationalModel.tables
     .map((table) => ({ table, element: elements.get(table.sourceElementId) }))
@@ -117,7 +117,7 @@ const repositoryTables = (analysis: UmlAnalysis, security: SecurityResolution) =
 };
 
 export function generateServices(analysis: UmlAnalysis, basePackage: string, security: SecurityResolution): GeneratedServiceFile[] {
-  return repositoryTables(analysis, security).flatMap(({ element }) => [
+  return eligibleCrudElements(analysis, security).flatMap(({ element }) => [
     {
       path: `src/main/java/${packagePath(servicePackage(basePackage, element))}/${element.name}Service.java`,
       source: contractSource(basePackage, element),

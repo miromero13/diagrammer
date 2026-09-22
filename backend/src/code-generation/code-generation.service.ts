@@ -18,6 +18,7 @@ import { generateDomainModel } from './domain-model-generator';
 import { generatePersistence } from './persistence-generator';
 import { generateDtos } from './dto-generator';
 import { generateServices } from './service-generator';
+import { generateControllers } from './controller-generator';
 import { featurePackageName } from './feature-name';
 import { adaptTemplateSource, relocateTemplateFeaturePath } from './template-adaptation';
 
@@ -26,7 +27,7 @@ const exec = promisify(execFile);
 const TEMPLATE_ROOT = existsSync(join(__dirname, 'templates', 'backend'))
   ? join(__dirname, 'templates', 'backend')
   : join(process.cwd(), 'src', 'code-generation', 'templates', 'backend');
-const PHASE_STEPS = [
+export const PHASE_STEPS = [
   { id: 'PARSING_DIAGRAM', label: 'Diagrama analizado' },
   { id: 'VALIDATING_DIAGRAM', label: 'Validando diagrama' },
   { id: 'COPYING_TEMPLATE', label: 'Copiando plantilla' },
@@ -35,9 +36,11 @@ const PHASE_STEPS = [
   { id: 'GENERATING_PERSISTENCE', label: 'Generando persistencia' },
   { id: 'GENERATING_API', label: 'Generando DTOs y mapeos' },
   { id: 'GENERATING_SERVICES', label: 'Generando servicios' },
+  { id: 'GENERATING_CONTROLLERS', label: 'Generando controladores y documentación OpenAPI' },
   { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
+export const RESUMABLE_GENERATION_STATUSES = ['QUEUED', ...PHASE_STEPS.map(({ id }) => id)];
 
 const normalizeCompanySlug = (companyName: string) => {
   if (typeof companyName !== 'string') throw new BadRequestException('El nombre de la empresa es obligatorio');
@@ -55,7 +58,7 @@ export class CodeGenerationService implements OnModuleInit {
 
   async onModuleInit() {
     const pending = await this.generatedCodeRepository.find({
-      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'GENERATING_API', 'GENERATING_SERVICES', 'COMPILING', 'PACKAGING_ZIP']) },
+      where: { status: In(RESUMABLE_GENERATION_STATUSES) },
     });
 
     for (const generation of pending) {
@@ -141,6 +144,10 @@ export class CodeGenerationService implements OnModuleInit {
           const serviceFiles = generateServices(analysis, basePackage, security);
           await Promise.all(serviceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
           await this.updateStep(id, 'GENERATING_SERVICES', 'COMPLETED', 'Servicios generados');
+          await this.updateStep(id, 'GENERATING_CONTROLLERS', 'IN_PROGRESS', 'Generando controladores y documentación OpenAPI');
+          const controllerFiles = generateControllers(analysis, basePackage, security);
+          await Promise.all(controllerFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+          await this.updateStep(id, 'GENERATING_CONTROLLERS', 'COMPLETED', 'Controladores y documentación OpenAPI generados');
           await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');

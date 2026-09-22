@@ -17,13 +17,17 @@ describe('generateDtos', () => {
 
     expect(generated).toHaveLength(10);
     expect(create).toContain('@NotNull');
+    expect(create).toContain('@Schema(description = "email field", requiredMode = Schema.RequiredMode.REQUIRED)');
+    expect(create).toContain('@Schema(description = "CreateAccountDto API schema")');
     expect(create).toContain('public String email;');
     expect(create).toContain('public String nickname;');
     expect(create).not.toContain('UUID id');
     expect(update).not.toContain('@NotNull');
     expect(response).toContain('public UUID id;');
+    expect(response).toContain('@Schema(description = "Entity identifier", format = "uuid"');
     expect(query).toContain('public Integer page;');
     expect(query).toContain('public Integer size;');
+    expect(query).toContain('import io.swagger.v3.oas.annotations.media.Schema;');
     expect(mapper).toContain('import org.springframework.stereotype.Component;');
     expect(mapper).toContain('@Component');
     expect(mapper).toContain('entity.email = dto.email;');

@@ -27,6 +27,7 @@ const renderDto = (packageName: string, name: string, fields: string[], imports:
   '',
   renderImports(imports),
   '',
+  `@Schema(description = "${name} API schema")`,
   `public class ${name} {`,
   fields.map((field) => `    ${field}`).join('\n'),
   '}',
@@ -69,9 +70,12 @@ const renderMapper = (packageName: string, element: UmlElement, attributes: UmlA
 };
 
 const dtoFields = (attributes: UmlAttribute[], typeFor: (attribute: UmlAttribute) => string, required: boolean, imports: Set<string>) => attributes.map((attribute) => {
-  if (required && attribute.multiplicity.lower !== null && attribute.multiplicity.lower > 0) imports.add('jakarta.validation.constraints.NotNull');
-  const annotation = required && attribute.multiplicity.lower !== null && attribute.multiplicity.lower > 0 ? '@NotNull\n    ' : '';
-  return `${annotation}public ${typeFor(attribute)} ${fieldName(attribute)};`;
+  const isRequired = required && attribute.multiplicity.lower !== null && attribute.multiplicity.lower > 0;
+  imports.add('io.swagger.v3.oas.annotations.media.Schema');
+  if (isRequired) imports.add('jakarta.validation.constraints.NotNull');
+  const schema = `@Schema(description = "${attribute.sourceName} field"${isRequired ? ', requiredMode = Schema.RequiredMode.REQUIRED' : ''})`;
+  const validation = isRequired ? '\n    @NotNull' : '';
+  return `${schema}${validation}\n    public ${typeFor(attribute)} ${fieldName(attribute)};`;
 });
 
 export function generateDtos(analysis: UmlAnalysis, basePackage: string): GeneratedDtoFile[] {
@@ -89,18 +93,18 @@ export function generateDtos(analysis: UmlAnalysis, basePackage: string): Genera
       const dtoPackage = `${basePackage}.${featurePackageName(element.name)}.dto`;
       const mapperPackage = `${basePackage}.${featurePackageName(element.name)}.mapper`;
       const typeFor = (attribute: UmlAttribute) => renderedType(attribute.sourceType, elements);
-      const commonImports = new Set<string>();
+      const commonImports = new Set<string>(['io.swagger.v3.oas.annotations.media.Schema']);
       attributes.forEach((attribute) => importForType(attribute.sourceType, elements, basePackage, commonImports));
 
       const createImports = new Set(commonImports);
       const updateImports = new Set(commonImports);
       const responseImports = new Set(['java.util.UUID', ...commonImports]);
-      const queryImports = new Set<string>();
+      const queryImports = new Set<string>(['io.swagger.v3.oas.annotations.media.Schema']);
       files.push(
         { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Create', element)}.java`, source: renderDto(dtoPackage, dtoName('Create', element), dtoFields(attributes, typeFor, true, createImports), createImports) },
         { path: `src/main/java/${packagePath(dtoPackage)}/${dtoName('Update', element)}.java`, source: renderDto(dtoPackage, dtoName('Update', element), dtoFields(attributes, typeFor, false, updateImports), updateImports) },
-        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}ResponseDto.java`, source: renderDto(dtoPackage, `${element.name}ResponseDto`, ['public UUID id;', ...dtoFields(attributes, typeFor, false, responseImports)], responseImports) },
-        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}QueryDto.java`, source: renderDto(dtoPackage, `${element.name}QueryDto`, ['public Integer page;', 'public Integer size;'], queryImports) },
+        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}ResponseDto.java`, source: renderDto(dtoPackage, `${element.name}ResponseDto`, ['@Schema(description = "Entity identifier", format = "uuid", accessMode = Schema.AccessMode.READ_ONLY)\n    public UUID id;', ...dtoFields(attributes, typeFor, false, responseImports)], responseImports) },
+        { path: `src/main/java/${packagePath(dtoPackage)}/${element.name}QueryDto.java`, source: renderDto(dtoPackage, `${element.name}QueryDto`, ['@Schema(description = "Zero-based page number")\n    public Integer page;', '@Schema(description = "Maximum number of resources to return")\n    public Integer size;'], queryImports) },
       );
 
       const mapperImports = new Set<string>([

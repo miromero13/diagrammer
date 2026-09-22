@@ -24,6 +24,8 @@ describe('generateDtos', () => {
     expect(response).toContain('public UUID id;');
     expect(query).toContain('public Integer page;');
     expect(query).toContain('public Integer size;');
+    expect(mapper).toContain('import org.springframework.stereotype.Component;');
+    expect(mapper).toContain('@Component');
     expect(mapper).toContain('entity.email = dto.email;');
     expect(mapper).toContain('if (dto.email != null) entity.email = dto.email;');
     expect(mapper).toContain('response.id = entity.getId();');

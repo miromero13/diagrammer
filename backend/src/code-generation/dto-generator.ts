@@ -39,24 +39,24 @@ const renderMapper = (packageName: string, element: UmlElement, attributes: UmlA
   const responseAssignments = attributes.map((attribute) => `        response.${fieldName(attribute)} = entity.${fieldName(attribute)};`).join('\n');
   const updateAssignments = attributes.map((attribute) => `        if (dto.${fieldName(attribute)} != null) entity.${fieldName(attribute)} = dto.${fieldName(attribute)};`).join('\n');
   const createMethod = element.kind === 'abstract'
-    ? [`    public static ${entity} toEntity(${create} dto, ${entity} entity) {`, '        if (dto == null || entity == null) return entity;', assignments, '        return entity;', '    }']
-    : [`    public static ${entity} toEntity(${create} dto) {`, '        if (dto == null) return null;', `        ${entity} entity = new ${entity}();`, assignments, '        return entity;', '    }'];
+    ? [`    public ${entity} toEntity(${create} dto, ${entity} entity) {`, '        if (dto == null || entity == null) return entity;', assignments, '        return entity;', '    }']
+    : [`    public ${entity} toEntity(${create} dto) {`, '        if (dto == null) return null;', `        ${entity} entity = new ${entity}();`, assignments, '        return entity;', '    }'];
   return [
     `package ${packageName};`,
     '',
     renderImports(imports),
     '',
+    '@Component',
     `public final class ${element.name}Mapper {`,
-    `    private ${element.name}Mapper() {}`,
     '',
     ...createMethod,
     '',
-    `    public static void updateEntity(${update} dto, ${entity} entity) {`,
+    `    public void updateEntity(${update} dto, ${entity} entity) {`,
     '        if (dto == null || entity == null) return;',
     updateAssignments,
     '    }',
     '',
-    `    public static ${response} toResponse(${entity} entity) {`,
+    `    public ${response} toResponse(${entity} entity) {`,
     '        if (entity == null) return null;',
     `        ${response} response = new ${response}();`,
     '        response.id = entity.getId();',
@@ -104,6 +104,7 @@ export function generateDtos(analysis: UmlAnalysis, basePackage: string): Genera
       );
 
       const mapperImports = new Set<string>([
+        'org.springframework.stereotype.Component',
         `${basePackage}.${featurePackageName(element.name)}.${entityName(element)}`,
         `${dtoPackage}.${dtoName('Create', element)}`,
         `${dtoPackage}.${dtoName('Update', element)}`,

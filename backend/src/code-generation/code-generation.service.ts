@@ -17,6 +17,7 @@ import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolutio
 import { generateDomainModel } from './domain-model-generator';
 import { generatePersistence } from './persistence-generator';
 import { generateDtos } from './dto-generator';
+import { generateServices } from './service-generator';
 import { featurePackageName } from './feature-name';
 import { adaptTemplateSource, relocateTemplateFeaturePath } from './template-adaptation';
 
@@ -33,6 +34,7 @@ const PHASE_STEPS = [
   { id: 'GENERATING_DOMAIN', label: 'Generando modelo de dominio' },
   { id: 'GENERATING_PERSISTENCE', label: 'Generando persistencia' },
   { id: 'GENERATING_API', label: 'Generando DTOs y mapeos' },
+  { id: 'GENERATING_SERVICES', label: 'Generando servicios' },
   { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
@@ -53,7 +55,7 @@ export class CodeGenerationService implements OnModuleInit {
 
   async onModuleInit() {
     const pending = await this.generatedCodeRepository.find({
-      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'GENERATING_API', 'COMPILING', 'PACKAGING_ZIP']) },
+      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'GENERATING_API', 'GENERATING_SERVICES', 'COMPILING', 'PACKAGING_ZIP']) },
     });
 
     for (const generation of pending) {
@@ -135,6 +137,10 @@ export class CodeGenerationService implements OnModuleInit {
           const apiFiles = generateDtos(analysis, basePackage);
           await Promise.all(apiFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
           await this.updateStep(id, 'GENERATING_API', 'COMPLETED', 'DTOs y mapeos generados');
+          await this.updateStep(id, 'GENERATING_SERVICES', 'IN_PROGRESS', 'Generando servicios');
+          const serviceFiles = generateServices(analysis, basePackage, security);
+          await Promise.all(serviceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+          await this.updateStep(id, 'GENERATING_SERVICES', 'COMPLETED', 'Servicios generados');
           await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');

@@ -292,10 +292,10 @@ src/main/java/backend/users/dto/PermissionSessionDto.java
 ### Base de datos
 
 ```text
-src/main/resources/db/migration/V1__identity_and_access.sql
+Entidades JPA y `spring.jpa.hibernate.ddl-auto=update`
 ```
 
-Como el proyecto descargado es nuevo y las migraciones todavia no fueron ejecutadas, se permite adaptar `V1__identity_and_access.sql`. Las migraciones del dominio funcional se generan por separado.
+Como el proyecto descargado es nuevo, Hibernate administra el esquema a partir de las entidades. Flyway permanece disponible solo si se habilita explicitamente con `FLYWAY_ENABLED=true` y se mantienen migraciones SQL.
 
 ## 6. Reglas comunes para casos autenticados
 
@@ -416,7 +416,7 @@ Eliminar tambien el modulo `users` completo si ninguna clase del diagrama repres
 
 - Eliminar propiedades `jwt.*`.
 - Eliminar propiedades del usuario inicial.
-- Conservar base de datos, Flyway, contexto y Swagger.
+- Conservar base de datos, Hibernate, Flyway opcional, contexto y Swagger.
 
 `.env.example`:
 
@@ -1044,7 +1044,7 @@ Despues de aplicar cualquier caso:
 1. Buscar referencias a clases eliminadas en todo `src`.
 2. Verificar que nombres de archivo, clases publicas, packages e imports coincidan.
 3. Verificar que exista una sola entidad principal autenticada.
-4. Verificar que el modelo JPA coincida con Flyway.
+4. Verificar que el modelo JPA coincida con el esquema administrado por Hibernate.
 5. Verificar que no coexistan `role`, `role_id` y `<principal>_roles` para la misma finalidad.
 6. Verificar que no existan permisos sin `PermissionCheckAspect` o sin authorities.
 7. Verificar que no exista `RequirePermission` cuando se eliminaron permisos.

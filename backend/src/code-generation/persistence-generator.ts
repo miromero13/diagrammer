@@ -414,7 +414,7 @@ export function generatePersistence(analysis: UmlAnalysis, basePackage: string, 
     const scalarMembers = element.structuredAttributes.map((attribute) => scalarMember(basePackage, element, table, attribute, enums, security)).filter((member): member is Member => Boolean(member));
     scalarMembers.forEach((member) => addMember(members, element.id, member));
   });
-  const relationArtifacts = addRelationships(analysis, basePackage, members, tableMap);
+  addRelationships(analysis, basePackage, members, tableMap);
   const children = new Set([...inheritance.values()]);
   const files: GeneratedPersistenceFile[] = [];
   const paths = new Set<string>();
@@ -433,7 +433,6 @@ export function generatePersistence(analysis: UmlAnalysis, basePackage: string, 
     const element = elements.get(table.sourceElementId);
     return element?.kind === 'class' && !isPromotedAbstract(element) && element.id !== security.principal?.id;
   }).sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => addFile(renderRepository(basePackage, elements.get(table.sourceElementId)!)));
-  addFile({ path: 'src/main/resources/db/migration/V1__model.sql', source: renderMigration(analysis, security, relationArtifacts.syntheticColumns, relationArtifacts.syntheticForeignKeys, relationArtifacts.joinTables, relationArtifacts.associationPairs) });
   return files;
 }
 

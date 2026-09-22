@@ -1,6 +1,6 @@
 # Phase 5: Persistence generation
 
-Generate the relationally authoritative JPA persistence model, repositories, enums, and Flyway migration after Phase 4 domain generation while retaining only basic JWT authentication.
+Generate the relationally authoritative JPA persistence model, repositories, and enums after Phase 4 domain generation while retaining only basic JWT authentication. Hibernate owns the generated schema by default; Flyway remains an explicit opt-in.
 
 ## 1. Relational mapping
 
@@ -35,16 +35,16 @@ Generate the relationally authoritative JPA persistence model, repositories, enu
 - **Progress:** Completed.
 - **Next step:** Preserve principal-repository ownership when future authentication changes are introduced.
 
-## 4. Flyway migration
+## 4. Hibernate schema management
 
-- **Objective:** Replace the template identity/access migration with one deterministic migration for the complete relational model.
-- **Scope:** Generate tables, UUID PKs, BaseEntity timestamps, columns, nullability, login uniqueness, enums, relationship FKs, indexes, join tables, association-class constraints, and inheritance FKs.
-- **Constraints:** Remove role/permission tables and do not silently omit unsupported relationships; preserve the existing migration directory and avoid template leftovers.
-- **Acceptance criteria:** Exactly one deterministic model migration is emitted; its physical names match `@Table`; no roles or permissions remain; unsafe relational cases fail before files are published.
-- **Route/delegation evidence:** Migration generation runs in the same persistence step after the relational mapping is validated.
-- **Verification evidence:** Migration assertions cover all required DDL categories and absence of identity/access tables; generated projects compile with Gradle Java/test classes.
+- **Objective:** Replace generated model SQL migrations with Hibernate schema management using `spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}`.
+- **Scope:** Emit JPA tables, UUID PKs, BaseEntity timestamps, columns, nullability, login uniqueness, enums, relationship FKs, indexes, join tables, association-class constraints, and inheritance mappings through entity annotations.
+- **Constraints:** Do not emit `V1__model.sql`; keep relational naming and validation rules, and retain Flyway only as an explicit `FLYWAY_ENABLED=true` opt-in.
+- **Acceptance criteria:** Generated persistence contains entities and repositories but no model SQL migration; physical names match `@Table`; unsafe relational cases fail before files are published.
+- **Route/delegation evidence:** Persistence generation emits Java persistence files after the relational mapping is validated; the active template defaults to Hibernate schema updates.
+- **Verification evidence:** Focused persistence/configuration tests cover migration absence, entity/repository output, `User -> users`, and generated schema properties.
 - **Progress:** Completed.
-- **Next step:** Extend SQL only through the validated persistence plan; never restore template identity/access DDL.
+- **Next step:** Extend JPA mappings only through the validated persistence plan; keep model SQL migrations out of generated output.
 
 ## 5. Pipeline and verification
 

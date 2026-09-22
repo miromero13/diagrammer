@@ -13,7 +13,7 @@ Actualmente implementa el modulo de identidad y acceso:
 - Autorizacion mediante permisos.
 - Documentacion OpenAPI/Swagger.
 
-La aplicacion usa PostgreSQL como base de datos, JPA/Hibernate para persistencia y Flyway para migraciones.
+La aplicacion usa PostgreSQL como base de datos y JPA/Hibernate para persistencia y administracion del esquema. Flyway queda deshabilitado por defecto y solo se habilita explicitamente.
 
 ## 2. Flujo de una peticion
 
@@ -112,7 +112,7 @@ roles N ------- N permissions
               +-- role_permissions
 ```
 
-Tablas resultantes de las migraciones de identidad y acceso:
+Tablas administradas por Hibernate a partir del modelo JPA:
 
 - `users`: datos del usuario y referencia obligatoria a `roles`.
 - `roles`: nombre unico del rol.
@@ -148,7 +148,7 @@ public ResponseMessage<List<UserEntity>> getAllUsers() {
 
 ## 6. Configuracion y ejecucion
 
-- `application.properties`: puerto, base de datos, Flyway, contexto `/api`, Swagger y JWT.
+- `application.properties`: puerto, base de datos, Hibernate, Flyway opcional, contexto `/api`, Swagger y JWT.
 - `.env.example`: plantilla de variables locales.
 - `.env`: valores locales; no debe versionarse.
 - `build.gradle.kts`: dependencias y tareas Gradle.
@@ -176,7 +176,8 @@ SU_PASSWORD
 - Las entidades representan persistencia; los DTOs representan el contrato HTTP.
 - Los endpoints protegidos deben declarar `@RequirePermission`.
 - Las contrasenas nunca se devuelven en JSON.
-- Los cambios de esquema se realizan mediante una nueva migracion Flyway.
+- Los cambios de esquema del backend generado se administran mediante JPA/Hibernate con `spring.jpa.hibernate.ddl-auto=update`.
+- Flyway permanece disponible solo como opt-in mediante `FLYWAY_ENABLED=true`.
 - Los errores deben conservar el formato `ResponseMessage`.
 - Las pruebas nuevas deben cubrir al menos el caso exitoso y los casos de seguridad o validacion relevantes.
 

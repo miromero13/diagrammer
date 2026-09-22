@@ -7,6 +7,7 @@ const security = (analysis: UmlAnalysis, enabled = false): SecurityResolution =>
   : { enabled: false };
 
 const files = (analysis: UmlAnalysis, enabled = false) => generatePersistence(analysis, 'com.example.generated', security(analysis, enabled));
+const expectNoModelMigration = (generated: ReturnType<typeof files>) => expect(generated.some((file) => file.path.endsWith('V1__model.sql'))).toBe(false);
 
 describe('generatePersistence', () => {
   it('generates relationally named principal and product entities without identity/access tables', () => {
@@ -16,18 +17,13 @@ describe('generatePersistence', () => {
     ], connections: [] });
     const generated = files(analysis, true);
     const account = generated.find((file) => file.path.endsWith('accounts/AccountEntity.java'))?.source;
-    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(account).toContain('@Table(name = "account")');
     expect(account).toContain('@Column(name = "email", nullable = false, unique = true)');
     expect(account).toContain('@JsonIgnore');
     expect(account).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(generated.some((file) => file.path.endsWith('accounts/AccountRepository.java'))).toBe(false);
     expect(generated.some((file) => file.path.endsWith('products/ProductRepository.java'))).toBe(true);
-    expect(migration).toContain('CREATE TABLE account');
-    expect(migration).toContain('CREATE TABLE product');
-    expect(migration).toContain('id UUID NOT NULL');
-    expect(migration).toContain('uk_account_email');
-    expect(migration).not.toMatch(/roles|permissions/i);
+    expectNoModelMigration(generated);
   });
 
   it('normalizes User table names without changing user columns', () => {
@@ -37,19 +33,16 @@ describe('generatePersistence', () => {
     ], connections: [{ id: 'admin-user', type: 'association', sourceId: 'admin', targetId: 'user', sourceMultiplicity: '0..*', targetMultiplicity: '1' }] });
     const generated = files(analysis);
     const user = generated.find((file) => file.path.endsWith('users/UserEntity.java'))?.source;
-    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
+    const admin = generated.find((file) => file.path.endsWith('admins/AdminEntity.java'))?.source;
     const userTable = analysis.relationalModel.tables.find((table) => table.sourceElementId === 'user');
 
     expect(analysis.errors).toEqual([]);
     expect(userTable?.name).toBe('users');
     expect(userTable?.columns.map((column) => column.name)).toContain('user');
     expect(user).toContain('@Table(name = "users")');
-    expect(migration).toContain('REFERENCES users (id)');
-    const firstForeignKey = migration!.indexOf('ALTER TABLE admin ADD CONSTRAINT fk_admin_user_id_users FOREIGN KEY (user_id) REFERENCES users (id);');
-    expect(firstForeignKey).toBeGreaterThan(migration!.lastIndexOf('CREATE TABLE'));
-    expect(migration!.indexOf('CREATE TABLE admin')).toBeLessThan(migration!.indexOf('CREATE TABLE users'));
-    expect(migration!.slice(migration!.indexOf('CREATE TABLE admin'), migration!.indexOf(');', migration!.indexOf('CREATE TABLE admin')))).not.toContain('FOREIGN KEY');
-    expect(migration!.indexOf('CREATE INDEX idx_admin_user_id')).toBeGreaterThan(firstForeignKey);
+    expect(admin).toContain('@JoinColumn(name = "user_id", nullable = false)');
+    expect(generated.some((file) => file.path.endsWith('admins/AdminRepository.java'))).toBe(true);
+    expectNoModelMigration(generated);
   });
 
   it('generates Permission as a normal feature entity, repository, and table', () => {
@@ -59,7 +52,6 @@ describe('generatePersistence', () => {
     const generated = files(analysis);
     const entity = generated.find((file) => file.path.endsWith('permissions/PermissionEntity.java'))?.source;
     const repository = generated.find((file) => file.path.endsWith('permissions/PermissionRepository.java'))?.source;
-    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
 
     expect(entity).toContain('@Entity');
     expect(entity).toContain('package com.example.generated.permissions;');
@@ -67,7 +59,7 @@ describe('generatePersistence', () => {
     expect(repository).toContain('package com.example.generated.permissions;');
     expect(repository).toContain('import com.example.generated.permissions.PermissionEntity;');
     expect(repository).toContain('JpaRepository<PermissionEntity, UUID>');
-    expect(migration).toContain('CREATE TABLE permission');
+    expectNoModelMigration(generated);
   });
 
   it('does not turn UML interfaces into relational tables or repositories', () => {
@@ -90,13 +82,11 @@ describe('generatePersistence', () => {
     const generated = files(analysis);
     const order = generated.find((file) => file.path.endsWith('orders/OrderEntity.java'))?.source;
     const customer = generated.find((file) => file.path.endsWith('customers/CustomerEntity.java'))?.source;
-    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(order).toContain('@ManyToOne');
     expect(order).toContain('import com.example.generated.customers.CustomerEntity;');
     expect(order).toContain('@JoinColumn(name = "customer_id", nullable = true)');
     expect(customer).toContain('@OneToMany(mappedBy = "customer")');
-    expect(migration).toContain('customer_id UUID');
-    expect(migration).toContain('idx_order_customer_id');
+    expectNoModelMigration(generated);
   });
 
   it('creates deterministic many-to-many join tables', () => {
@@ -106,16 +96,11 @@ describe('generatePersistence', () => {
     ], connections: [{ id: 'student-course', type: 'association', sourceId: 'student', targetId: 'course', sourceMultiplicity: '0..*', targetMultiplicity: '0..*' }] });
     const generated = files(analysis);
     const student = generated.find((file) => file.path.endsWith('students/StudentEntity.java'))?.source;
-    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
     expect(student).toContain('@ManyToMany');
     expect(student).toContain('@JoinTable(name = "course_student"');
-    expect(migration).toContain('CREATE TABLE course_student');
-    expect(migration).toContain('PRIMARY KEY (student_id, course_id)');
-    const joinTableStart = migration!.indexOf('CREATE TABLE course_student');
-    expect(migration!.slice(joinTableStart, migration!.indexOf(');', joinTableStart))).not.toContain('FOREIGN KEY');
-    const firstForeignKey = migration!.indexOf('ALTER TABLE course_student ADD CONSTRAINT fk_course_student_course FOREIGN KEY (course_id) REFERENCES course (id);');
-    expect(firstForeignKey).toBeGreaterThan(migration!.lastIndexOf('CREATE TABLE'));
-    expect(migration).toContain('ALTER TABLE course_student ADD CONSTRAINT fk_course_student_student FOREIGN KEY (student_id) REFERENCES student (id);');
+    expect(generated.some((file) => file.path.endsWith('students/StudentRepository.java'))).toBe(true);
+    expect(generated.some((file) => file.path.endsWith('courses/CourseRepository.java'))).toBe(true);
+    expectNoModelMigration(generated);
   });
 
   it('keeps aggregation non-destructive and cascades composition collections', () => {
@@ -139,10 +124,10 @@ describe('generatePersistence', () => {
       { id: 'account', type: 'uml.Class', name: 'Account' },
     ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '0..1', sourceNavigable: true, targetNavigable: false }] });
     const profile = files(oneToOne).find((file) => file.path.endsWith('profiles/ProfileEntity.java'))?.source;
-    const profileMigration = files(oneToOne).find((file) => file.path.endsWith('V1__model.sql'))?.source;
+    const oneToOneFiles = files(oneToOne);
     expect(profile).toContain('@OneToOne');
     expect(profile).toContain('@JoinColumn(name = "account_id", nullable = true)');
-    expect(profileMigration).toContain('account_id UUID');
+    expectNoModelMigration(oneToOneFiles);
 
     const association = normalizeAndValidateUml({ elements: [
       { id: 'student', type: 'uml.Class', name: 'Student' },
@@ -150,11 +135,11 @@ describe('generatePersistence', () => {
       { id: 'enrollment', type: 'uml.Class', name: 'Enrollment', attributes: ['createdAt: date'] },
     ], connections: [{ id: 'student-course', type: 'association', sourceId: 'student', targetId: 'course', sourceMultiplicity: '0..*', targetMultiplicity: '0..*', associationClassId: 'enrollment' }] });
     const enrollment = files(association).find((file) => file.path.endsWith('enrollments/EnrollmentEntity.java'))?.source;
-    const associationMigration = files(association).find((file) => file.path.endsWith('V1__model.sql'))?.source;
+    const associationFiles = files(association);
     expect(enrollment).toContain('@ManyToOne');
     expect(enrollment).not.toMatch(/public .* (id|createdAt|updatedAt);/);
     expect(enrollment).toContain('@JoinColumn(name = "student_id", nullable = false)');
-    expect(associationMigration).toContain('uk_enrollment_course_id_student_id');
+    expectNoModelMigration(associationFiles);
   });
 
   it('maps enums and joined inheritance', () => {
@@ -207,7 +192,7 @@ describe('generatePersistence', () => {
     expect(source).toContain('public abstract class JobEntity');
     expect(source).toContain('public abstract void run();');
     expect(generated.some((file) => file.path.endsWith('jobs/JobRepository.java'))).toBe(false);
-    expect(generated.some((file) => file.path.endsWith('V1__model.sql'))).toBe(true);
+    expectNoModelMigration(generated);
   });
 
   it('keeps interface inheritance out of relational tables and persistence files', () => {

@@ -197,7 +197,7 @@ Payload:
 
   * [ ] Generar relaciones JPA.
   * [ ] Generar repositories.
-  * [ ] Generar migraciones Flyway.
+  * [ ] Usar Hibernate para administrar el esquema con `spring.jpa.hibernate.ddl-auto=update`.
   * [ ] Crear foreign keys, índices, constraints y tablas intermedias.
   * [ ] Aplicar reglas para asociaciones, agregación, composición, herencia y relaciones N:N.
 
@@ -206,7 +206,7 @@ Payload:
   * [ ] Mostrar la etapa **Generando persistencia**.
   * [ ] Mostrar errores cuando una relación sea inválida.
 
-  **Resultado:** ZIP con entidades, relaciones JPA, repositories y migraciones.
+  **Resultado:** ZIP con entidades, relaciones JPA, repositories y esquema administrado por Hibernate.
 
 ---
 

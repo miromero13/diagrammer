@@ -23,18 +23,18 @@ POST /api/products
 GET  /api/products/{id}
 ```
 
-## 2. Crea la migracion de base de datos
+## 2. Actualiza el modelo JPA
 
-Si el endpoint necesita una tabla o una columna nueva, crea primero una migracion en:
+Si el endpoint necesita una tabla o una columna nueva, actualiza primero la entidad JPA correspondiente. El backend generado usa Hibernate para sincronizar el esquema:
 
 ```text
-src/main/resources/db/migration/
+spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}
 ```
 
-Usa el formato de Flyway:
+Flyway permanece deshabilitado por defecto. Habilitalo solo si vas a mantener migraciones SQL explícitas:
 
 ```text
-V2__nombre_descriptivo.sql
+FLYWAY_ENABLED=true
 ```
 
 Reglas:
@@ -257,7 +257,7 @@ Verifica tambien manualmente:
 - [ ] Existe DTO de entrada con validaciones.
 - [ ] Existe DTO de salida si la entidad no debe exponerse.
 - [ ] La entidad extiende `BaseEntity` cuando corresponde.
-- [ ] Existe migracion Flyway para cambios de esquema.
+- [ ] El modelo JPA refleja los cambios de esquema.
 - [ ] El repositorio solo contiene acceso a datos.
 - [ ] El servicio contiene las reglas de negocio.
 - [ ] El controlador contiene `@RequirePermission`.

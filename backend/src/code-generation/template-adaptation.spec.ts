@@ -61,6 +61,9 @@ describe('authentication template adaptation', () => {
       expect(paths.filter((path) => path.startsWith('emailnotificationservices/')).some((path) => path.split('/').length > 2)).toBe(false);
       expect(paths).not.toEqual(expect.arrayContaining([expect.stringMatching(/^emailnotificationservices\/(?:entity|repository|service|controller|dto|filter|provider)\//)]));
       expect(await readFile(join(javaRoot, 'emailnotificationservices', 'EmailNotificationServiceEntity.java'), 'utf8')).toContain('package com.acme.demo.emailnotificationservices;');
+      const applicationProperties = await readFile(join(projectRoot, 'src', 'main', 'resources', 'application.properties'), 'utf8');
+      expect(applicationProperties).toContain('spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}');
+      expect(applicationProperties).toContain('spring.flyway.enabled=${FLYWAY_ENABLED:false}');
     } finally {
       await rm(workRoot, { recursive: true, force: true });
     }

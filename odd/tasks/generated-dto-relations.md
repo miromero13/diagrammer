@@ -55,7 +55,7 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 ## Progress
 
 - Status: complete.
-- Next step: commit the verified work unit; generated Gradle compilation remains intentionally unrun.
+- Next step: none; generated Gradle compilation remains intentionally unrun.
 
 ## Verification record
 

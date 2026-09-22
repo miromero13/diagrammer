@@ -116,7 +116,7 @@ export class CodeGenerationService implements OnModuleInit {
          await adaptCaseFiveTemplate(projectRoot, security);
         await this.updateStep(id, 'GENERATING_SECURITY', 'COMPLETED', 'Autenticación y seguridad adaptadas');
          await this.updateStep(id, 'GENERATING_DOMAIN', 'IN_PROGRESS', 'Generando modelo de dominio');
-         await Promise.all(generateDomainModel(analysis.normalizedModel.elements, `com.${companySlug}.${backendName}`, security).map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+          await Promise.all(generateDomainModel(analysis.normalizedModel.elements, `com.${companySlug}.${backendName}`, security, analysis.normalizedModel.relationships).map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
          await this.updateStep(id, 'GENERATING_DOMAIN', 'COMPLETED', 'Modelo de dominio generado');
          await this.updateStep(id, 'GENERATING_PERSISTENCE', 'IN_PROGRESS', 'Generando persistencia');
          const persistenceFiles = generatePersistence(analysis, `com.${companySlug}.${backendName}`, security);

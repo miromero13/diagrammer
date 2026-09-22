@@ -127,8 +127,11 @@ const parseAttribute = (value: unknown) => {
 const parseMethod = (value: unknown) => {
   const decorated = parseDecoration(text(value)), source = decorated.source, match = source.match(/^([+\-#~])?\s*(\/)?\s*([A-Za-z_$][\w$]*)\s*\((.*)\)\s*(?::\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?))?$/);
   if (!match) return null;
-  const parameters = match[4].trim() ? match[4].split(',').map((parameter) => parameter.trim().match(/^([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?)$/)).filter((parameter): parameter is RegExpMatchArray => Boolean(parameter)) : [];
-  if (match[4].trim() && parameters.length !== match[4].split(',').length) return null;
+  const parameterText = match[4].trim(), parameterValues: string[] = []; let depth = 0; let start = 0;
+  [...parameterText].forEach((character, index) => { if (character === '<') depth += 1; if (character === '>') depth -= 1; if (character === ',' && depth === 0) { parameterValues.push(parameterText.slice(start, index)); start = index + 1; } });
+  if (parameterText) parameterValues.push(parameterText.slice(start));
+  const parameters = parameterValues.map((parameter) => parameter.trim().match(/^([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?)$/)).filter((parameter): parameter is RegExpMatchArray => Boolean(parameter));
+  if (parameterText && parameters.length !== parameterValues.length) return null;
   return { name: match[3], visibility: match[1] || null, parameters: parameters.map((parameter) => ({ name: parameter[1], sourceType: parameter[2] })), sourceReturnType: match[5] || 'void', isStatic: decorated.isStatic, isAbstract: decorated.isAbstract };
 };
 const javaType = (sourceType: string) => {
@@ -136,6 +139,167 @@ const javaType = (sourceType: string) => {
   const primitive: Record<string, string> = { string: 'String', str: 'String', text: 'String', char: 'String', character: 'String', int: 'Integer', integer: 'Integer', long: 'Long', float: 'Float', double: 'Double', decimal: 'BigDecimal', number: 'BigDecimal', boolean: 'Boolean', bool: 'Boolean', date: 'LocalDate', datetime: 'LocalDateTime', localdate: 'LocalDate', localdatetime: 'LocalDateTime', uuid: 'UUID', void: 'Void' };
   const collection = compact.match(/^(list|set|map|array)<(.+)>$/i); if (collection) return `${collection[1][0].toUpperCase()}${collection[1].slice(1).toLowerCase()}<${javaType(collection[2])}>`;
   return primitive[base] || compact.replace(/\[\]$/, '');
+};
+const typeArguments = (value: string) => {
+  const open = value.indexOf('<'); if (open < 0 || !value.endsWith('>')) return null;
+  const body = value.slice(open + 1, -1), parts: string[] = []; let depth = 0; let start = 0;
+  [...body].forEach((character, index) => { if (character === '<') depth += 1; if (character === '>') depth -= 1; if (character === ',' && depth === 0) { parts.push(body.slice(start, index)); start = index + 1; } });
+  parts.push(body.slice(start)); return { base: value.slice(0, open), parts };
+};
+const renderedJavaType = (value: string) => {
+  const compact = value.replace(/\s/g, '');
+  if (compact.endsWith('[]')) return `${renderedJavaType(compact.slice(0, -2))}[]`;
+  const generic = typeArguments(compact);
+  if (!generic) return javaType(compact);
+  const base = generic.base.toLowerCase();
+  if (base === 'array' && generic.parts.length === 1) return `${renderedJavaType(generic.parts[0])}[]`;
+  const name = generic.base.charAt(0).toUpperCase() + generic.base.slice(1).toLowerCase();
+  const parts = generic.parts.map(renderedJavaType);
+  return name === 'Map' && parts.length === 1 ? `Map<String, ${parts[0]}>` : `${name}<${parts.join(', ')}>`;
+};
+const validUmlType = (value: string, names: Set<string>): boolean => {
+  const compact = value.replace(/\s/g, '').replace(/\[\]$/, ''), generic = typeArguments(compact);
+  if (primitiveTypes.has(compact.toLowerCase()) || names.has(compact.toLowerCase())) return true;
+  if (!generic || !['list', 'set', 'map', 'array'].includes(generic.base.toLowerCase())) return false;
+  return (generic.base.toLowerCase() === 'map' ? generic.parts.length === 1 || generic.parts.length === 2 : generic.parts.length === 1) && generic.parts.every((part) => validUmlType(part, names));
+};
+const renderedMethodReturn = (method: UmlMethod) => (method.sourceReturnType || method.javaReturnType || '').toLowerCase() === 'void' ? 'void' : renderedJavaType(method.sourceReturnType || method.javaReturnType || 'void');
+const methodSignature = (method: UmlMethod) => `${method.name}(${method.parameters.map((parameter) => renderedJavaType(parameter.sourceType || parameter.javaType)).join(',')})`;
+const validAbstractMethod = (method: UmlMethod) => Boolean(method.isAbstract && !method.isStatic && method.visibility !== '-');
+const inheritableInstanceMethod = (method: UmlMethod) => !method.isStatic && method.visibility !== '-';
+const inheritableStaticMethod = (method: UmlMethod) => Boolean(method.isStatic && method.visibility !== '-');
+type MethodRequirement = { method: UmlMethod; owner: UmlElement };
+
+const classifierType = (type: string, elements: UmlElement[]) => {
+  const compact = type.replace(/\s/g, '');
+  if (compact.endsWith('[]') || compact.includes('<')) return undefined;
+  return elements.find((element) => element.name.toLowerCase() === compact.toLowerCase());
+};
+const classifierSubtype = (actual: UmlElement, expected: UmlElement, elementsById: Map<string, UmlElement>, relationships: UmlConnection[], visited = new Set<string>()): boolean => {
+  if (actual.id === expected.id) return true;
+  if (visited.has(actual.id)) return false;
+  visited.add(actual.id);
+  return relationships
+    .filter((connection) => connection.sourceId === actual.id && (connection.type === 'inheritance' || connection.type === 'implementation'))
+    .some((connection) => {
+      const parent = elementsById.get(connection.targetId);
+      return Boolean(parent && (parent.id === expected.id || classifierSubtype(parent, expected, elementsById, relationships, new Set(visited))));
+    });
+};
+const compatibleReturn = (actual: string, expected: string, elements: UmlElement[], elementsById: Map<string, UmlElement>, relationships: UmlConnection[]) => {
+  if (actual === expected) return true;
+  if (actual.endsWith('[]') && expected.endsWith('[]')) return compatibleReturn(actual.slice(0, -2), expected.slice(0, -2), elements, elementsById, relationships);
+  const actualType = classifierType(actual, elements), expectedType = classifierType(expected, elements);
+  return Boolean(actualType && expectedType && classifierSubtype(actualType, expectedType, elementsById, relationships));
+};
+
+const addRequirement = (requirements: Map<string, MethodRequirement[]>, method: UmlMethod, owner: UmlElement, elements: UmlElement[]) => {
+  if (method.isStatic) return;
+  const key = methodSignature(method), current = requirements.get(key) || [];
+  if (!current.some((item) => item.owner.id === owner.id && renderedMethodReturn(item.method) === renderedMethodReturn(method))) current.push({ method, owner });
+  requirements.set(key, current);
+};
+const sortedRelationshipTargets = (relationships: UmlConnection[], sourceId: string, type: string, elementsById: Map<string, UmlElement>) => relationships
+  .filter((connection) => connection.sourceId === sourceId && connection.type === type)
+  .sort((a, b) => (elementsById.get(a.targetId)?.name || a.targetName || a.targetId).localeCompare(elementsById.get(b.targetId)?.name || b.targetName || b.targetId) || a.id.localeCompare(b.id));
+const collectInterfaceRequirements = (contract: UmlElement, elementsById: Map<string, UmlElement>, elements: UmlElement[], relationships: UmlConnection[], requirements: Map<string, MethodRequirement[]>, visited: Set<string>) => {
+  if (visited.has(contract.id)) return;
+  visited.add(contract.id);
+  contract.structuredMethods.filter(inheritableInstanceMethod).forEach((method) => addRequirement(requirements, method, contract, elements));
+  sortedRelationshipTargets(relationships, contract.id, 'inheritance', elementsById).forEach((connection) => {
+    const parent = elementsById.get(connection.targetId);
+    if (parent?.kind === 'interface') collectInterfaceRequirements(parent, elementsById, elements, relationships, requirements, visited);
+  });
+};
+const collectClassRequirements = (element: UmlElement, elementsById: Map<string, UmlElement>, elements: UmlElement[], relationships: UmlConnection[], requirements: Map<string, MethodRequirement[]>, visited: Set<string>, includeOwn = true) => {
+  if (visited.has(element.id)) return;
+  visited.add(element.id);
+  if (includeOwn) element.structuredMethods.filter(validAbstractMethod).forEach((method) => addRequirement(requirements, method, element, elements));
+  sortedRelationshipTargets(relationships, element.id, 'implementation', elementsById).forEach((connection) => {
+    const contract = elementsById.get(connection.targetId);
+    if (contract?.kind === 'interface') collectInterfaceRequirements(contract, elementsById, elements, relationships, requirements, new Set());
+  });
+  sortedRelationshipTargets(relationships, element.id, 'inheritance', elementsById).forEach((connection) => {
+    const parent = elementsById.get(connection.targetId);
+    if (parent) {
+      parent.structuredMethods.filter(inheritableInstanceMethod).forEach((method) => addRequirement(requirements, method, parent, elements));
+      collectClassRequirements(parent, elementsById, elements, relationships, requirements, visited, false);
+    }
+  });
+};
+const collectInheritedStaticMethods = (parent: UmlElement, elementsById: Map<string, UmlElement>, relationships: UmlConnection[], methods: Map<string, UmlElement>, visited: Set<string>) => {
+  if (visited.has(parent.id)) return;
+  visited.add(parent.id);
+  parent.structuredMethods.filter(inheritableStaticMethod).forEach((method) => {
+    const signature = methodSignature(method);
+    if (!methods.has(signature)) methods.set(signature, parent);
+  });
+  sortedRelationshipTargets(relationships, parent.id, 'inheritance', elementsById).forEach((connection) => {
+    const ancestor = elementsById.get(connection.targetId);
+    if (ancestor) collectInheritedStaticMethods(ancestor, elementsById, relationships, methods, visited);
+  });
+};
+const validateRequirementConflicts = (element: UmlElement, requirements: Map<string, MethodRequirement[]>, elements: UmlElement[], elementsById: Map<string, UmlElement>, relationships: UmlConnection[], errors: string[]) => {
+  requirements.forEach((items, signature) => {
+    for (let index = 0; index < items.length; index += 1) {
+      for (let next = index + 1; next < items.length; next += 1) {
+        const first = renderedMethodReturn(items[index].method), second = renderedMethodReturn(items[next].method);
+        if (!compatibleReturn(first, second, elements, elementsById, relationships) && !compatibleReturn(second, first, elements, elementsById, relationships)) {
+          errors.push(`Requisitos heredados incompatibles en ${element.name}.${signature}: ${items[index].owner.name} devuelve ${first}, pero ${items[next].owner.name} devuelve ${second}.`);
+        }
+      }
+    }
+  });
+};
+const validateExplicitReturns = (element: UmlElement, requirements: Map<string, MethodRequirement[]>, elements: UmlElement[], elementsById: Map<string, UmlElement>, relationships: UmlConnection[], errors: string[]) => {
+  element.structuredMethods.forEach((method) => {
+    const expected = requirements.get(methodSignature(method)) || [];
+    expected.forEach((requirement) => {
+      const actualReturn = renderedMethodReturn(method), expectedReturn = renderedMethodReturn(requirement.method);
+      if (!compatibleReturn(actualReturn, expectedReturn, elements, elementsById, relationships)) {
+        errors.push(`La operación ${element.name}.${methodSignature(method)} tiene retorno Java ${actualReturn}, incompatible con ${requirement.owner.name} (${expectedReturn}).`);
+      }
+    });
+  });
+};
+const validateStaticCollisions = (element: UmlElement, requirements: Map<string, MethodRequirement[]>, elementsById: Map<string, UmlElement>, relationships: UmlConnection[], errors: string[]) => {
+  if (element.kind !== 'class' && element.kind !== 'abstract') return;
+  const inheritedStatic = new Map<string, UmlElement>();
+  sortedRelationshipTargets(relationships, element.id, 'inheritance', elementsById).forEach((connection) => {
+    const parent = elementsById.get(connection.targetId);
+    if (parent) collectInheritedStaticMethods(parent, elementsById, relationships, inheritedStatic, new Set());
+  });
+  const instanceSignatures = new Set(element.structuredMethods.filter((method) => !method.isStatic).map(methodSignature));
+  requirements.forEach((_, signature) => instanceSignatures.add(signature));
+  inheritedStatic.forEach((owner, signature) => {
+    if (instanceSignatures.has(signature)) errors.push(`La operación ${element.name}.${signature} colisiona con el método estático heredado ${owner.name}.${signature}; declare también un método estático o cambie la firma.`);
+  });
+};
+const validateOperations = (elements: UmlElement[], relationships: UmlConnection[], errors: string[]) => {
+  const elementsById = new Map(elements.map((element) => [element.id, element]));
+  elements.forEach((element) => {
+    const signatures = new Map<string, UmlMethod[]>();
+    element.structuredMethods.forEach((method) => signatures.set(methodSignature(method), [...(signatures.get(methodSignature(method)) || []), method]));
+    signatures.forEach((methods, signature) => {
+      if (methods.length < 2) return;
+      const returns = [...new Set(methods.map(renderedMethodReturn))];
+      errors.push(returns.length > 1
+        ? `Operaciones duplicadas en ${element.name}: ${signature} tiene tipos de retorno Java incompatibles (${returns.join(', ')}).`
+        : `Firma de operación duplicada en ${element.name}: ${signature}.`);
+    });
+    const requirements = new Map<string, MethodRequirement[]>();
+    if (element.kind === 'interface') {
+      sortedRelationshipTargets(relationships, element.id, 'inheritance', elementsById).forEach((connection) => {
+        const parent = elementsById.get(connection.targetId);
+        if (parent?.kind === 'interface') collectInterfaceRequirements(parent, elementsById, elements, relationships, requirements, new Set());
+      });
+    } else if (element.kind === 'class' || element.kind === 'abstract') {
+    }
+    if (element.kind === 'class' || element.kind === 'abstract') collectClassRequirements(element, elementsById, elements, relationships, requirements, new Set(), false);
+    validateStaticCollisions(element, requirements, elementsById, relationships, errors);
+    validateRequirementConflicts(element, requirements, elements, elementsById, relationships, errors);
+    if (element.kind === 'interface' || element.kind === 'class' || element.kind === 'abstract') validateExplicitReturns(element, requirements, elements, elementsById, relationships, errors);
+  });
 };
 const tableName = (name: string) => name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
 const columnName = (name: string) => tableName(name);
@@ -160,7 +324,7 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
     const persistible = markedPersistible(raw), kind = /interface/i.test(text(raw?.type)) || /<<interface>>/i.test(text(raw?.name)) ? 'interface' : /abstract/i.test(text(raw?.type)) || raw?.isAbstract === true || /<<abstract>>/i.test(text(raw?.name)) ? 'abstract' : 'class';
     const structuredAttributes: UmlAttribute[] = [], attributes = (Array.isArray(raw?.attributes) ? raw.attributes : []).map((attribute: unknown, attributeIndex: number) => {
       const parsed = parseAttribute(attribute); if (!parsed) { errors.push(`Atributo inválido en ${name || id}: ${text(attribute) || attributeIndex + 1}`); return text(attribute); }
-      const normalized = parsed.sourceType.replace(/\s/g, '').replace(/\[\]$/, ''), generic = normalized.match(/^[a-z]+<(.+)>$/i)?.[1], valid = primitiveTypes.has(normalized.toLowerCase()) || names.has(normalized.toLowerCase()) || (['list', 'set', 'map', 'array'].includes(normalized.split('<')[0].toLowerCase()) && (!generic || primitiveTypes.has(generic.toLowerCase()) || names.has(generic.toLowerCase())));
+       const normalized = parsed.sourceType.replace(/\s/g, '').replace(/\[\]$/, ''), valid = validUmlType(normalized, names);
       if (!valid) errors.push(`Tipo de atributo desconocido en ${name || id}: ${parsed.sourceType}`);
       const canonicalName = canonicalAttribute(parsed.name), suggestion = canonicalName === parsed.name ? undefined : canonicalName;
       if (suggestion) warn({ code: 'UML_ATTRIBUTE_TYPO', severity: 'warning', element: name, attribute: parsed.name, originalValue: parsed.name, canonicalSuggestion: suggestion, message: `El atributo ${parsed.name} en ${name} parece sospechoso; sugerencia: ${suggestion}.` });
@@ -170,8 +334,8 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
     });
     const structuredMethods: UmlMethod[] = [], methods = (Array.isArray(raw?.methods) ? raw.methods : []).map((method: unknown, methodIndex: number) => {
       const parsed = parseMethod(method); if (!parsed) { errors.push(`Método inválido en ${name || id}: ${text(method) || methodIndex + 1}`); return text(method); }
-      const types = [parsed.sourceReturnType, ...parsed.parameters.map((parameter) => parameter.sourceType)];
-      types.forEach((type) => { const compact = type.replace(/\s/g, '').replace(/\[\]$/, ''), generic = compact.match(/^[a-z]+<(.+)>$/i)?.[1], valid = primitiveTypes.has(compact.toLowerCase()) || names.has(compact.toLowerCase()) || (['list', 'set', 'map', 'array'].includes(compact.split('<')[0].toLowerCase()) && (!generic || primitiveTypes.has(generic.toLowerCase()) || names.has(generic.toLowerCase()))); if (!valid) errors.push(`Tipo de método desconocido en ${name || id}: ${type}`); });
+       const types = [parsed.sourceReturnType, ...parsed.parameters.map((parameter) => parameter.sourceType)];
+       types.forEach((type) => { if (!validUmlType(type, names)) errors.push(`Tipo de método desconocido en ${name || id}: ${type}`); });
        const semantic = Array.isArray(raw?.methodSemantics) && raw.methodSemantics[methodIndex] && typeof raw.methodSemantics[methodIndex] === 'object' ? raw.methodSemantics[methodIndex] : {};
        structuredMethods.push({ name: parsed.name, sourceName: parsed.name, visibility: parsed.visibility, parameters: parsed.parameters.map((parameter) => ({ ...parameter, javaType: javaType(parameter.sourceType) })), sourceReturnType: parsed.sourceReturnType, javaReturnType: javaType(parsed.sourceReturnType), isStatic: semantic.isStatic ?? parsed.isStatic, isAbstract: semantic.isAbstract ?? parsed.isAbstract });
       return `${parsed.visibility || ''}${parsed.name}(${parsed.parameters.map((parameter) => `${parameter.name}: ${parameter.sourceType}`).join(', ')}): ${parsed.sourceReturnType}`;
@@ -206,8 +370,8 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
      const classLike = (kind?: UmlElement['kind']) => kind === 'class' || kind === 'abstract';
      if (connection.usage === 'enum') {
        if (sourceKind === 'enum' || targetKind !== 'enum') errors.push(`La dependencia «use» ${connection.id} debe ir de una clase hacia un enum`);
-     } else if (connection.type === 'inheritance' && (!classLike(sourceKind) || !classLike(targetKind))) {
-       errors.push(`La herencia ${connection.id} requiere clases o clases abstractas en ambos extremos`);
+     } else if (connection.type === 'inheritance' && !((classLike(sourceKind) && classLike(targetKind)) || (sourceKind === 'interface' && targetKind === 'interface'))) {
+       errors.push(`La herencia ${connection.id} requiere clases o clases abstractas en ambos extremos, o una interfaz que herede de otra interfaz`);
      } else if (connection.type === 'implementation' && (!classLike(sourceKind) || targetKind !== 'interface')) {
        errors.push(`La implementación ${connection.id} requiere una clase concreta y una interfaz`);
      } else if (['association', 'aggregation', 'composition'].includes(connection.type) && (!classLike(sourceKind) || !classLike(targetKind))) {
@@ -220,8 +384,9 @@ export const normalizeAndValidateUml = (snapshot: Record<string, unknown>): UmlA
        connection.sourceNavigable = typeof raw.sourceNavigable === 'boolean' ? raw.sourceNavigable : undefined; connection.targetNavigable = typeof raw.targetNavigable === 'boolean' ? raw.targetNavigable : undefined;
        if (text(raw.stereotype)) connection.stereotype = text(raw.stereotype); if (text(raw.usage)) connection.usage = text(raw.usage);
      }
-   });
-   const inheritance = connections.filter((c) => c.type === 'inheritance'), inheritedIds = new Set(inheritance.map((c) => c.targetId));
+    });
+    validateOperations(elements, connections, errors);
+    const inheritance = connections.filter((c) => c.type === 'inheritance'), inheritedIds = new Set(inheritance.map((c) => c.targetId));
   const excludedElements = elements.filter((e) => e.kind === 'interface' || (e.kind === 'abstract' && !inheritedIds.has(e.id)) || (e.kind === 'class' && /service$/i.test(e.name))).map((e) => ({ id: e.id, name: e.name, kind: e.kind as 'class' | 'interface' | 'abstract', reason: e.kind === 'interface' ? 'La interfaz no es persistible; se conserva como elemento técnico excluido.' : 'La clase técnica *Service se excluye; se conserva como elemento técnico excluido.' }));
    const excludedIds = new Set(excludedElements.map((e) => e.id)), tableElements = elements.filter((e) => ['class', 'abstract'].includes(e.kind) && !excludedIds.has(e.id));
    const physicalTableNames = new Set<string>();

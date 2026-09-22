@@ -94,6 +94,80 @@ describe('UML analysis', () => {
     expect(renderUmlAnalysis(analysis, { enabled: false })).toContain('+calculateTotal(items: List<Order>): Decimal');
   });
 
+  it('rejects duplicate operation signatures and incompatible interface returns', () => {
+    const duplicate = normalizeAndValidateUml({ elements: [{ id: 'worker', type: 'uml.Class', name: 'Worker', methods: ['+run(items: Array<String>): String', '+run(items: String[]): String'] }], connections: [] });
+    const incompatible = normalizeAndValidateUml({ elements: [
+      { id: 'contract', type: 'uml.Interface', name: 'Contract', methods: ['+send(): String'] },
+      { id: 'worker', type: 'uml.Class', name: 'Worker', methods: ['+send(): Integer'] },
+    ], connections: [{ id: 'worker-contract', type: 'implementation', sourceId: 'worker', targetId: 'contract' }] });
+    expect(duplicate.errors).toEqual([expect.stringContaining('Firma de operación duplicada')]);
+    expect(incompatible.errors).toEqual([expect.stringContaining('retorno Java Integer, incompatible con Contract (String)')]);
+  });
+
+  it('validates interface overrides, conflicting parent contracts, and covariant returns', () => {
+    const override = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Interface', name: 'ParentContract', methods: ['+read(): String'] },
+      { id: 'child', type: 'uml.Interface', name: 'ChildContract', methods: ['+read(): Integer'] },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+    const conflictingParents = normalizeAndValidateUml({ elements: [
+      { id: 'parent-a', type: 'uml.Interface', name: 'ParentA', methods: ['+read(): String'] },
+      { id: 'parent-b', type: 'uml.Interface', name: 'ParentB', methods: ['+read(): Integer'] },
+      { id: 'child', type: 'uml.Interface', name: 'ChildContract' },
+    ], connections: [
+      { id: 'child-parent-a', type: 'inheritance', sourceId: 'child', targetId: 'parent-a' },
+      { id: 'child-parent-b', type: 'inheritance', sourceId: 'child', targetId: 'parent-b' },
+    ] });
+    const covariant = normalizeAndValidateUml({ elements: [
+      { id: 'animal', type: 'uml.Class', name: 'Animal' },
+      { id: 'dog', type: 'uml.Class', name: 'Dog' },
+      { id: 'parent', type: 'uml.Interface', name: 'ParentContract', methods: ['+read(): Animal'] },
+      { id: 'child', type: 'uml.Interface', name: 'ChildContract', methods: ['+read(): Dog'] },
+    ], connections: [
+      { id: 'dog-animal', type: 'inheritance', sourceId: 'dog', targetId: 'animal' },
+      { id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' },
+    ] });
+    expect(override.errors).toEqual([expect.stringContaining('retorno Java Integer, incompatible con ParentContract (String)')]);
+    expect(conflictingParents.errors).toEqual([expect.stringContaining('Requisitos heredados incompatibles en ChildContract.read()')]);
+    expect(covariant.errors).toEqual([]);
+  });
+
+  it('validates overrides of inherited concrete protected methods', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Class', name: 'Parent', methods: ['#read(): String'] },
+      { id: 'child', type: 'uml.Class', name: 'Child', methods: ['+read(): Integer'] },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+
+    expect(analysis.errors).toEqual([expect.stringContaining('retorno Java Integer, incompatible con Parent (String)')]);
+  });
+
+  it('rejects instance and required contract methods colliding with inherited static methods', () => {
+    const instanceCollision = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Class', name: 'Parent', methods: ['#lookup(): void {static}'] },
+      { id: 'child', type: 'uml.Class', name: 'Child', methods: ['+lookup(): void'] },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+    const contractCollision = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Class', name: 'Parent', methods: ['+lookup(): void {static}'] },
+      { id: 'contract', type: 'uml.Interface', name: 'Contract', methods: ['+lookup(): void'] },
+      { id: 'child', type: 'uml.Class', name: 'Child' },
+    ], connections: [
+      { id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' },
+      { id: 'child-contract', type: 'implementation', sourceId: 'child', targetId: 'contract' },
+    ] });
+    const staticHiding = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Class', name: 'Parent', methods: ['+lookup(): void {static}'] },
+      { id: 'child', type: 'uml.Class', name: 'Child', methods: ['+lookup(): void {static}'] },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+    const privateStatic = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Class', name: 'Parent', methods: ['-lookup(): void {static}'] },
+      { id: 'child', type: 'uml.Class', name: 'Child', methods: ['+lookup(): void'] },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+
+    expect(instanceCollision.errors).toEqual([expect.stringContaining('método estático heredado')]);
+    expect(contractCollision.errors).toEqual([expect.stringContaining('método estático heredado')]);
+    expect(staticHiding.errors).toEqual([]);
+    expect(privateStatic.errors).toEqual([]);
+  });
+
   it('accepts empty relationship multiplicities and renders endpoints separately', () => {
     const analysis = normalizeAndValidateUml({ elements: [{ id: 'a', type: 'uml.Class', name: 'A' }, { id: 'b', type: 'uml.Class', name: 'B' }], connections: [{ id: 'ab', type: 'association', sourceId: 'a', targetId: 'b', sourceMultiplicity: '', targetMultiplicity: '' }] });
     expect(analysis.errors).toEqual([]);
@@ -246,6 +320,25 @@ describe('UML analysis', () => {
 
     expect(analysis.structuredWarnings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'UML_RELATIONSHIP_NO_FK' })]));
     expect(analysis.warnings).toEqual([]);
+  });
+
+  it('accepts interface inheritance and rejects class/interface inheritance misuse', () => {
+    const valid = normalizeAndValidateUml({
+      elements: [
+        { id: 'parent', type: 'uml.Interface', name: 'ParentContract' },
+        { id: 'child', type: 'uml.Interface', name: 'ChildContract' },
+      ],
+      connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }],
+    });
+    const invalid = normalizeAndValidateUml({
+      elements: [
+        { id: 'class', type: 'uml.Class', name: 'Worker' },
+        { id: 'interface', type: 'uml.Interface', name: 'Contract' },
+      ],
+      connections: [{ id: 'class-interface', type: 'inheritance', sourceId: 'class', targetId: 'interface' }],
+    });
+    expect(valid.errors).toEqual([]);
+    expect(invalid.errors).toEqual([expect.stringContaining('herencia class-interface')]);
   });
 
   it('does not fabricate FKs for isolated or ambiguous relationships', () => {

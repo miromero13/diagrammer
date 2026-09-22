@@ -1,6 +1,7 @@
 import { featureName, featurePackageName } from './feature-name';
 import { SecurityResolution } from './security-resolution';
 import { RelationalColumn, RelationalForeignKey, RelationalModel, UmlAnalysis, UmlConnection, UmlElement } from './uml-analysis';
+import { isPromotedAbstract, operationImports, relationshipDeclaration, renderOperations } from './uml-java';
 
 export type GeneratedPersistenceFile = { path: string; source: string };
 
@@ -43,7 +44,8 @@ const tableByElement = (tables: Table[]) => new Map(tables.map((table) => [table
 
 const validateInheritance = (analysis: UmlAnalysis, tableMap: Map<string, Table>): Inheritance => {
   const parents = new Map<string, string>();
-  analysis.normalizedModel.relationships.filter((connection) => connection.type === 'inheritance').forEach((connection) => {
+  const elements = new Map(analysis.normalizedModel.elements.map((element) => [element.id, element]));
+  analysis.normalizedModel.relationships.filter((connection) => connection.type === 'inheritance' && classLike(elements.get(connection.sourceId)) && classLike(elements.get(connection.targetId))).forEach((connection) => {
     if (!tableMap.has(connection.sourceId) || !tableMap.has(connection.targetId)) fail(`inheritance ${connection.id} has a missing persistible endpoint`);
     if (parents.has(connection.sourceId)) fail(`class ${connection.sourceName} has ambiguous inheritance parents`);
     parents.set(connection.sourceId, connection.targetId);
@@ -295,7 +297,7 @@ const renderEnum = (basePackage: string, enumModel: RelationalModel['enums'][num
   };
 };
 
-const renderEntity = (basePackage: string, element: UmlElement, table: Table, members: Member[], parent: UmlElement | undefined, hasChildren: boolean) => {
+const renderEntity = (basePackage: string, element: UmlElement, table: Table, members: Member[], parent: UmlElement | undefined, hasChildren: boolean, elements: UmlElement[], relationships: UmlConnection[]) => {
   const packageName = `${basePackage}.${featurePackageName(element.name)}`;
   const imports = new Set<string>(['jakarta.persistence.Column', 'jakarta.persistence.Entity', 'jakarta.persistence.Table', `${basePackage}.common.entity.BaseEntity`]);
   if (parent) imports.add(`${basePackage}.${featurePackageName(parent.name)}.${entityName(parent)}`);
@@ -317,11 +319,16 @@ const renderEntity = (basePackage: string, element: UmlElement, table: Table, me
     if (item.startsWith('java.') || item.startsWith('com.') || item.startsWith(`${basePackage}.`)) javaImports.add(item);
   }));
   javaImports.forEach((item) => imports.add(item));
-  const extendsType = parent ? entityName(parent) : 'BaseEntity';
-  const declaration = `public ${element.kind === 'abstract' ? 'abstract ' : ''}class ${entityName(element)} extends ${extendsType}`;
+  const relationship = relationshipDeclaration(element, elements, relationships, basePackage, 'BaseEntity');
+  operationImports(element, elements, relationships, basePackage).forEach((item) => imports.add(item));
+  relationship.imports.forEach((item) => imports.add(item));
+  const extendsType = relationship.extendsType || (parent ? entityName(parent) : 'BaseEntity');
   const inheritance = hasChildren ? '@Inheritance(strategy = InheritanceType.JOINED)\n' : '';
   const fields = members.map((member) => `${member.annotations.map((annotation) => `    ${annotation}\n`).join('')}    public ${member.type} ${member.name};`).join('\n\n');
-  return `package ${packageName};\n\n${[...imports].filter((item) => item && !item.startsWith(`${packageName}.`)).sort().map((item) => `import ${item};`).join('\n')}\n\n@Entity\n@Table(name = "${table.name}")\n${inheritance}${declaration} {\n${fields}\n}\n`;
+  const methods = renderOperations(element, elements, relationships);
+  const classModifier = element.kind === 'abstract' || isPromotedAbstract(element) ? 'abstract ' : '';
+  const classDeclaration = `public ${classModifier}class ${entityName(element)} extends ${extendsType}${relationship.implementsTypes.length ? ` implements ${relationship.implementsTypes.join(', ')}` : ''}`;
+  return `package ${packageName};\n\n${[...imports].filter((item) => item && !item.startsWith(`${packageName}.`)).sort().map((item) => `import ${item};`).join('\n')}\n\n@Entity\n@Table(name = "${table.name}")\n${inheritance}${classDeclaration} {\n${[fields, methods].filter(Boolean).join('\n\n')}\n}\n`;
 };
 
 const renderRepository = (basePackage: string, element: UmlElement) => {
@@ -411,7 +418,7 @@ export function generatePersistence(analysis: UmlAnalysis, basePackage: string, 
   tables.sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => {
     const element = elements.get(table.sourceElementId)!;
     const parent = inheritance.get(element.id) ? elements.get(inheritance.get(element.id)!) : undefined;
-    addFile({ path: `src/main/java/${packagePath(`${basePackage}.${featurePackageName(element.name)}`)}/${entityName(element)}.java`, source: renderEntity(basePackage, element, table, members.get(element.id) || [], parent, children.has(element.id)) });
+    addFile({ path: `src/main/java/${packagePath(`${basePackage}.${featurePackageName(element.name)}`)}/${entityName(element)}.java`, source: renderEntity(basePackage, element, table, members.get(element.id) || [], parent, children.has(element.id), analysis.normalizedModel.elements, analysis.normalizedModel.relationships) });
   });
   analysis.relationalModel.enums.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((enumModel) => addFile(renderEnum(basePackage, enumModel)));
   tables.filter((table) => elements.get(table.sourceElementId)?.kind === 'class' && elements.get(table.sourceElementId)?.id !== security.principal?.id).sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => addFile(renderRepository(basePackage, elements.get(table.sourceElementId)!)));

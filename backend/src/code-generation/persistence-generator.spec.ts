@@ -152,6 +152,47 @@ describe('generatePersistence', () => {
     expect(enumFile).toContain('enum Status');
   });
 
+  it('preserves UML operations and implementation contracts in final persistence entities', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'contract', type: 'uml.Interface', name: 'AccountService', methods: ['+send(): void'] },
+      { id: 'parent', type: 'uml.AbstractClass', name: 'Parent', methods: ['#archive(): void {abstract}'] },
+      { id: 'child', type: 'uml.Class', name: 'Child' },
+    ], connections: [
+      { id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' },
+      { id: 'child-contract', type: 'implementation', sourceId: 'child', targetId: 'contract' },
+    ] });
+    const generated = files(analysis);
+    const child = generated.find((file) => file.path.endsWith('childs/ChildEntity.java'))?.source;
+    const parent = generated.find((file) => file.path.endsWith('parents/ParentEntity.java'))?.source;
+
+    expect(child).toContain('class ChildEntity extends ParentEntity implements AccountService');
+    expect(child).toContain('public void send()');
+    expect(child).toContain('public void archive()');
+    expect(child).toContain('throw new UnsupportedOperationException("UML operation requires implementation: send")');
+    expect(parent).toContain('protected abstract void archive();');
+    expect(generated.some((file) => file.path.includes('accountservices'))).toBe(false);
+  });
+
+  it('promotes abstract operations on concrete persistence entities', () => {
+    const analysis = normalizeAndValidateUml({ elements: [{ id: 'job', type: 'uml.Class', name: 'Job', methods: ['+run(): void {abstract}'] }], connections: [] });
+    const source = files(analysis).find((file) => file.path.endsWith('jobs/JobEntity.java'))?.source;
+    expect(source).toContain('public abstract class JobEntity');
+    expect(source).toContain('public abstract void run();');
+  });
+
+  it('keeps interface inheritance out of relational tables and persistence files', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'parent', type: 'uml.Interface', name: 'ParentContract', methods: ['+parent(): void'] },
+      { id: 'child', type: 'uml.Interface', name: 'ChildContract', methods: ['+child(): void'] },
+      { id: 'account', type: 'uml.Class', name: 'Account' },
+    ], connections: [{ id: 'child-parent', type: 'inheritance', sourceId: 'child', targetId: 'parent' }] });
+    const generated = files(analysis);
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.relationalModel.tables.map((table) => table.name)).toEqual(['account']);
+    expect(generated.some((file) => /parentcontracts|childcontracts/.test(file.path))).toBe(false);
+    expect(generated.some((file) => file.path.endsWith('accounts/AccountEntity.java'))).toBe(true);
+  });
+
   it('uses the source end as the deterministic owner when one-to-one navigability is absent', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'profile', type: 'uml.Class', name: 'Profile' },

@@ -61,4 +61,60 @@ describe('generateDtos', () => {
     expect(promotedMapper).toContain('toEntity(CreateJobDto dto, JobEntity entity)');
     expect(promotedMapper).not.toContain('new JobEntity()');
   });
+
+  it('flattens inherited fields and emits owning relation IDs', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'user', type: 'uml.AbstractClass', name: 'User', attributes: ['name: String [1]'] },
+      { id: 'admin', type: 'uml.Class', name: 'Admin', attributes: ['department: Department', 'level: Integer'] },
+      { id: 'department', type: 'uml.Class', name: 'Department', attributes: ['name: String'] },
+    ], connections: [
+      { id: 'admin-user', type: 'inheritance', sourceId: 'admin', targetId: 'user' },
+      { id: 'admin-department', type: 'association', sourceId: 'admin', targetId: 'department', sourceMultiplicity: '1', targetMultiplicity: '1' },
+    ] });
+    const create = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/dto/CreateAdminDto.java'))?.source;
+    const update = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/dto/UpdateAdminDto.java'))?.source;
+    const response = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/dto/AdminResponseDto.java'))?.source;
+    const mapper = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('admins/mapper/AdminMapper.java'))?.source;
+
+    expect(create).toContain('public String name;');
+    expect(create).toContain('public Integer level;');
+    expect(create).toContain('public UUID departmentId;');
+    expect(create).toContain('@NotNull');
+    expect(create).not.toContain('userId');
+    expect(update).toContain('public UUID departmentId;');
+    expect(update).not.toContain('requiredMode = Schema.RequiredMode.REQUIRED');
+    expect(response).toContain('public UUID departmentId;');
+    expect(response).toContain('accessMode = Schema.AccessMode.READ_ONLY');
+    expect(mapper).toContain('response.departmentId = entity.department == null ? null : entity.department.getId();');
+  });
+
+  it('makes only the many-to-many owner writable and maps both ID collections', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'article', type: 'uml.Class', name: 'Article' },
+      { id: 'tag', type: 'uml.Class', name: 'Tag' },
+    ], connections: [{ id: 'article-tags', type: 'association', sourceId: 'article', targetId: 'tag', sourceMultiplicity: '0..*', targetMultiplicity: '0..*' }] });
+    const files = generateDtos(analysis, 'com.example.generated');
+    const articleCreate = files.find((file) => file.path.endsWith('articles/dto/CreateArticleDto.java'))?.source;
+    const tagCreate = files.find((file) => file.path.endsWith('tags/dto/CreateTagDto.java'))?.source;
+    const tagResponse = files.find((file) => file.path.endsWith('tags/dto/TagResponseDto.java'))?.source;
+    const articleMapper = files.find((file) => file.path.endsWith('articles/mapper/ArticleMapper.java'))?.source;
+
+    expect(articleCreate).toContain('public List<UUID> tagsIds;');
+    expect(tagCreate).not.toContain('articlesIds');
+    expect(tagResponse).toContain('public List<UUID> articlesIds;');
+    expect(articleMapper).toContain('entity.tags == null ? List.of()');
+  });
+
+  it('does not invent a one-to-one ID when multiplicities are ambiguous', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'profile', type: 'uml.Class', name: 'Profile' },
+      { id: 'account', type: 'uml.Class', name: 'Account' },
+    ], connections: [{ id: 'profile-account', type: 'association', sourceId: 'profile', targetId: 'account' }] });
+    const files = generateDtos(analysis, 'com.example.generated');
+    const profileCreate = files.find((file) => file.path.endsWith('profiles/dto/CreateProfileDto.java'))?.source;
+    const accountResponse = files.find((file) => file.path.endsWith('accounts/dto/AccountResponseDto.java'))?.source;
+
+    expect(profileCreate).not.toContain('accountId');
+    expect(accountResponse).not.toContain('profileId');
+  });
 });

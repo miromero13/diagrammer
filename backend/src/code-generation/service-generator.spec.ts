@@ -76,4 +76,39 @@ describe('generateServices', () => {
     expect(implementation).not.toContain('PublishingContract');
     expect(implementation).not.toContain('publish(');
   });
+
+  it('injects target repositories and resolves writable relation IDs', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'admin', type: 'uml.Class', name: 'Admin', attributes: ['name: String'] },
+      { id: 'department', type: 'uml.Class', name: 'Department' },
+    ], connections: [{ id: 'admin-department', type: 'association', sourceId: 'admin', targetId: 'department', sourceMultiplicity: '1', targetMultiplicity: '1' }] });
+    const implementation = generateServices(analysis, 'com.example.generated', noSecurity)
+      .find((file) => file.path.endsWith('admins/service/AdminServiceImpl.java'))?.source;
+
+    expect(implementation).toContain('import com.example.generated.departments.DepartmentRepository;');
+    expect(implementation).toContain('private final DepartmentRepository departmentRepository;');
+    expect(implementation).toContain('AdminServiceImpl(AdminRepository repository, AdminMapper mapper, DepartmentRepository departmentRepository)');
+    expect(implementation).toContain('entity.department = departmentRepository.findById(dto.departmentId)');
+    expect(implementation).toContain('if (dto.departmentId != null) entity.department = departmentRepository.findById(dto.departmentId)');
+    expect(implementation).toContain('Department not found: " + dto.departmentId');
+  });
+
+  it('fails when a writable relation targets the security-excluded principal', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'account', type: 'uml.Class', name: 'Account', attributes: ['email: String', 'passwordHash: String'] },
+      { id: 'order', type: 'uml.Class', name: 'Order' },
+    ], connections: [{ id: 'order-account', type: 'association', sourceId: 'order', targetId: 'account', sourceMultiplicity: '1', targetMultiplicity: '1' }] });
+    const security = resolveSecurityCase(analysis, {
+      enabled: true,
+      principalClassId: 'account',
+      loginField: 'email',
+      credentialField: 'passwordHash',
+      testUserLogin: 'test@example.com',
+      testUserPassword: 'safe-test-password',
+    });
+
+    expect(() => generateServices(analysis, 'com.example.generated', security)).toThrow(
+      'writable relation Order.account targets Account, but no repository is generated for Account',
+    );
+  });
 });

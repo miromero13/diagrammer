@@ -30,6 +30,23 @@ describe('generatePersistence', () => {
     expect(migration).not.toMatch(/roles|permissions/i);
   });
 
+  it('normalizes User table names without changing user columns', () => {
+    const analysis = normalizeAndValidateUml({ elements: [
+      { id: 'user', type: 'uml.Class', name: 'User', attributes: ['user: String'] },
+      { id: 'admin', type: 'uml.Class', name: 'Admin' },
+    ], connections: [{ id: 'admin-user', type: 'association', sourceId: 'admin', targetId: 'user', sourceMultiplicity: '0..*', targetMultiplicity: '1' }] });
+    const generated = files(analysis);
+    const user = generated.find((file) => file.path.endsWith('users/UserEntity.java'))?.source;
+    const migration = generated.find((file) => file.path.endsWith('V1__model.sql'))?.source;
+    const userTable = analysis.relationalModel.tables.find((table) => table.sourceElementId === 'user');
+
+    expect(analysis.errors).toEqual([]);
+    expect(userTable?.name).toBe('users');
+    expect(userTable?.columns.map((column) => column.name)).toContain('user');
+    expect(user).toContain('@Table(name = "users")');
+    expect(migration).toContain('REFERENCES users (id)');
+  });
+
   it('generates Permission as a normal feature entity, repository, and table', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'permission', type: 'uml.Class', name: 'Permission', attributes: ['name: String'] },

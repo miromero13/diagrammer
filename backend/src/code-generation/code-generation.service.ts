@@ -16,6 +16,7 @@ import { normalizeAndValidateUml, renderUmlAnalysis } from './uml-analysis';
 import { adaptCaseFiveTemplate, resolveSecurityCase } from './security-resolution';
 import { generateDomainModel } from './domain-model-generator';
 import { generatePersistence } from './persistence-generator';
+import { generateDtos } from './dto-generator';
 import { featurePackageName } from './feature-name';
 import { adaptTemplateSource, relocateTemplateFeaturePath } from './template-adaptation';
 
@@ -31,6 +32,7 @@ const PHASE_STEPS = [
   { id: 'GENERATING_SECURITY', label: 'Generando autenticación y seguridad' },
   { id: 'GENERATING_DOMAIN', label: 'Generando modelo de dominio' },
   { id: 'GENERATING_PERSISTENCE', label: 'Generando persistencia' },
+  { id: 'GENERATING_API', label: 'Generando DTOs y mapeos' },
   { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
@@ -51,7 +53,7 @@ export class CodeGenerationService implements OnModuleInit {
 
   async onModuleInit() {
     const pending = await this.generatedCodeRepository.find({
-      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'COMPILING', 'PACKAGING_ZIP']) },
+      where: { status: In(['QUEUED', 'PARSING_DIAGRAM', 'VALIDATING_DIAGRAM', 'COPYING_TEMPLATE', 'GENERATING_SECURITY', 'GENERATING_DOMAIN', 'GENERATING_PERSISTENCE', 'GENERATING_API', 'COMPILING', 'PACKAGING_ZIP']) },
     });
 
     for (const generation of pending) {
@@ -127,9 +129,13 @@ export class CodeGenerationService implements OnModuleInit {
            .filter((element): element is NonNullable<typeof element> => element?.kind === 'abstract')
             .map((element) => fs.rm(join(projectRoot, 'src', 'main', 'java', ...basePackage.split('.'), featurePackageName(element.name), `${element.name}.java`), { force: true })));
          await fs.rm(join(projectRoot, 'src', 'main', 'java', ...`com.${companySlug}.${backendName}`.split('.'), 'common', 'enums', 'GenderEnum.java'), { force: true });
-         await Promise.all(persistenceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
-         await this.updateStep(id, 'GENERATING_PERSISTENCE', 'COMPLETED', 'Persistencia generada');
-         await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
+          await Promise.all(persistenceFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+          await this.updateStep(id, 'GENERATING_PERSISTENCE', 'COMPLETED', 'Persistencia generada');
+          await this.updateStep(id, 'GENERATING_API', 'IN_PROGRESS', 'Generando DTOs y mapeos');
+          const apiFiles = generateDtos(analysis, basePackage);
+          await Promise.all(apiFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
+          await this.updateStep(id, 'GENERATING_API', 'COMPLETED', 'DTOs y mapeos generados');
+          await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');
        await this.updateStep(id, 'PACKAGING_ZIP', 'IN_PROGRESS', 'Creando ZIP');

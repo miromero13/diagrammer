@@ -149,6 +149,8 @@ export class CodeGenerationService implements OnModuleInit {
           await Promise.all(controllerFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
           await this.updateStep(id, 'GENERATING_CONTROLLERS', 'COMPLETED', 'Controladores y documentación OpenAPI generados');
           await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
+          // Equivalent to `chmod +x gradlew` before compilation.
+          await fs.chmod(join(projectRoot, 'gradlew'), 0o755);
       await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
        await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');
        await this.updateStep(id, 'PACKAGING_ZIP', 'IN_PROGRESS', 'Creando ZIP');

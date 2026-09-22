@@ -81,7 +81,7 @@ const renderController = (basePackage: string, name: string, security: SecurityR
     `    ${apiResponses('201', 'Resource created', security.enabled)}`,
     `    public ResponseEntity<ResponseMessage<${name}ResponseDto>> create${name}(`,
     `        @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "${name} creation payload", required = true) @Valid @RequestBody Create${name}Dto dto) {`,
-    `        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMessage.success(service.create(dto), "${name} created", 1));`,
+     `        return ResponseEntity.status(HttpStatus.CREATED).body(ResponseMessage.success(HttpStatus.CREATED.value(), service.create(dto), "${name} created", 1));`,
     '    }',
     '',
     '    @GetMapping',

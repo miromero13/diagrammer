@@ -67,7 +67,11 @@ public class ResponseMessage<T> {
 
   // Métodos para construir respuestas fácilmente
   public static <T> ResponseMessage<T> success(T data, String message, Integer countData) {
-      return new ResponseMessage<>(200, message, null, data, countData);
+      return success(200, data, message, countData);
+  }
+
+  public static <T> ResponseMessage<T> success(int statusCode, T data, String message, Integer countData) {
+      return new ResponseMessage<>(statusCode, message, null, data, countData);
   }
 
   public static <T> ResponseMessage<T> error(String errorMessage, int statusCode) {

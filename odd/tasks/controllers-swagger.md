@@ -54,8 +54,8 @@ Phase 8 produces repositories, DTOs, mappers, and CRUD services, but generated p
 ## Progress
 
 - Status: complete.
-- Next step: parent spot-check and independent verification.
-- Verification evidence: `npm test -- --runInBand src/code-generation/controller-generator.spec.ts src/code-generation/dto-generator.spec.ts src/code-generation/service-generator.spec.ts src/code-generation/code-generation.service.spec.ts` — 4 suites, 10 tests passed; `npm run build` passed; `git diff --check` passed. Gradle test/bootRun were not run.
-- Implementation evidence: `controller-generator.ts` emits deterministic CRUD only, reuses `eligibleCrudElements`, documents validation/error/security responses, and has no custom UML-operation route mapping. `dto-generator.ts` adds class/field `@Schema` annotations without changing `@NotNull` derivation. `GENERATING_CONTROLLERS` is persisted in `PHASE_STEPS`, resumed by startup status lookup, and runs between services and compilation.
+- Next step: parent spot-check and independent verification of the Phase 9 correction.
+- Verification evidence: the original Phase 9 checks passed (`npm test -- --runInBand src/code-generation/controller-generator.spec.ts src/code-generation/dto-generator.spec.ts src/code-generation/service-generator.spec.ts src/code-generation/code-generation.service.spec.ts` — 4 suites, 10 tests; `npm run build`; `git diff --check`). The correction passes `npm test -- --runInBand src/code-generation/controller-generator.spec.ts` — 1 suite, 2 tests; `npm run build`; and `git diff --check`. Independent verification remains pending parent rerun; Gradle test/bootRun were not run.
+- Implementation evidence: `controller-generator.ts` emits deterministic CRUD only, reuses `eligibleCrudElements`, documents validation/error/security responses, uses the status-aware response factory with `HttpStatus.CREATED.value()` for create bodies, and has no custom UML-operation route mapping. `dto-generator.ts` adds class/field `@Schema` annotations without changing `@NotNull` derivation. `GENERATING_CONTROLLERS` is persisted in `PHASE_STEPS`, resumed by startup status lookup, and runs between services and compilation.
 - Checklist: CTL-01, CTL-02, CTL-03, CTL-04, CTL-05, and CTL-06 complete.
-- Commit: single Phase 9 work-unit commit; final hash is reported in the delivery summary.
+- Commit: original Phase 9 work-unit commit remains unchanged; the correction commit is reported in the delivery summary.

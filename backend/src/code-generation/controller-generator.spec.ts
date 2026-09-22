@@ -19,6 +19,7 @@ describe('generateControllers', () => {
     ]);
     expect(source).toContain('@RequestMapping("/products")');
     expect(source).toContain('@PostMapping');
+    expect(source).toContain('ResponseMessage.success(HttpStatus.CREATED.value(), service.create(dto), "Product created", 1)');
     expect(source).toContain('@GetMapping');
     expect(source).toContain('@PutMapping("/{id}")');
     expect(source).toContain('@DeleteMapping("/{id}")');

@@ -68,6 +68,7 @@ Make generated CRUD DTOs represent inherited fields and UML relationships instea
 - `git diff --check` — passed.
 - Legacy template adaptation path and unrelated worktree changes — preserved.
 - Work-unit commit: `4a5c007` (`fix: include inherited fields and relation ids in generated DTOs`).
+- Work-unit commit: `95a22fe` (`fix: generate association and inherited DTOs`).
 
 ## Bounded behavior
 

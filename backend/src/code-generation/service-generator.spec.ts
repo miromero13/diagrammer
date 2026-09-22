@@ -34,6 +34,7 @@ describe('generateServices', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'product', type: 'uml.Class', name: 'Product' },
       { id: 'document', type: 'uml.AbstractClass', name: 'Document' },
+      { id: 'job', type: 'uml.Class', name: 'Job', methods: ['+run(): void {abstract}'] },
       { id: 'contract', type: 'uml.Interface', name: 'ProductContract', methods: ['+publish(): void'] },
     ], connections: [] });
     const generated = generateServices(analysis, 'com.example.generated', noSecurity);

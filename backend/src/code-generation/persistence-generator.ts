@@ -421,7 +421,10 @@ export function generatePersistence(analysis: UmlAnalysis, basePackage: string, 
     addFile({ path: `src/main/java/${packagePath(`${basePackage}.${featurePackageName(element.name)}`)}/${entityName(element)}.java`, source: renderEntity(basePackage, element, table, members.get(element.id) || [], parent, children.has(element.id), analysis.normalizedModel.elements, analysis.normalizedModel.relationships) });
   });
   analysis.relationalModel.enums.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((enumModel) => addFile(renderEnum(basePackage, enumModel)));
-  tables.filter((table) => elements.get(table.sourceElementId)?.kind === 'class' && elements.get(table.sourceElementId)?.id !== security.principal?.id).sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => addFile(renderRepository(basePackage, elements.get(table.sourceElementId)!)));
+  tables.filter((table) => {
+    const element = elements.get(table.sourceElementId);
+    return element?.kind === 'class' && !isPromotedAbstract(element) && element.id !== security.principal?.id;
+  }).sort((a, b) => a.name.localeCompare(b.name)).forEach((table) => addFile(renderRepository(basePackage, elements.get(table.sourceElementId)!)));
   addFile({ path: 'src/main/resources/db/migration/V1__model.sql', source: renderMigration(analysis, security, relationArtifacts.syntheticColumns, relationArtifacts.syntheticForeignKeys, relationArtifacts.joinTables, relationArtifacts.associationPairs) });
   return files;
 }

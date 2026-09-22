@@ -54,5 +54,5 @@ The generator currently stops after DTOs and mappers. Generated projects therefo
 
 - Status: complete.
 - Next step: none.
-- Verification evidence: `npm test -- --runInBand src/code-generation/service-generator.spec.ts src/code-generation/dto-generator.spec.ts` passed (2 suites, 7 tests); `npm run build` passed; `git diff --check` passed. Gradle commands were not run per task constraints.
-- Commit: work-unit commit created for Phase 8 services.
+- Verification evidence: corrective verification covers promoted-abstract service, repository, entity/table, and mapper behavior; `npm test -- --runInBand src/code-generation/service-generator.spec.ts src/code-generation/dto-generator.spec.ts src/code-generation/persistence-generator.spec.ts src/code-generation/domain-model-generator.spec.ts src/code-generation/uml-analysis.spec.ts` passed (5 suites, 56 tests); `npm run build` and `git diff --check` passed. Gradle commands were not run per task constraints.
+- Commit: one corrective work-unit commit created for Phase 8 services; the repository history records the new commit.

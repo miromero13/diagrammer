@@ -1,6 +1,6 @@
 import { featurePackageName } from './feature-name';
 import { RelationalModel, UmlAnalysis, UmlAttribute, UmlElement } from './uml-analysis';
-import { importForType, renderedType } from './uml-java';
+import { importForType, isPromotedAbstract, renderedType } from './uml-java';
 
 export type GeneratedDtoFile = { path: string; source: string };
 
@@ -38,7 +38,7 @@ const renderMapper = (packageName: string, element: UmlElement, attributes: UmlA
   const assignments = attributes.map((attribute) => `        entity.${fieldName(attribute)} = dto.${fieldName(attribute)};`).join('\n');
   const responseAssignments = attributes.map((attribute) => `        response.${fieldName(attribute)} = entity.${fieldName(attribute)};`).join('\n');
   const updateAssignments = attributes.map((attribute) => `        if (dto.${fieldName(attribute)} != null) entity.${fieldName(attribute)} = dto.${fieldName(attribute)};`).join('\n');
-  const createMethod = element.kind === 'abstract'
+  const createMethod = element.kind === 'abstract' || isPromotedAbstract(element)
     ? [`    public ${entity} toEntity(${create} dto, ${entity} entity) {`, '        if (dto == null || entity == null) return entity;', assignments, '        return entity;', '    }']
     : [`    public ${entity} toEntity(${create} dto) {`, '        if (dto == null) return null;', `        ${entity} entity = new ${entity}();`, assignments, '        return entity;', '    }'];
   return [

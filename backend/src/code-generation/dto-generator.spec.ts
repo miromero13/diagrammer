@@ -45,11 +45,16 @@ describe('generateDtos', () => {
   it('keeps abstract entity mappers compile-safe', () => {
     const analysis = normalizeAndValidateUml({ elements: [
       { id: 'document', type: 'uml.AbstractClass', name: 'Document', attributes: ['title: String'] },
+      { id: 'job', type: 'uml.Class', name: 'Job', attributes: ['title: String'], methods: ['+run(): void {abstract}'] },
       { id: 'invoice', type: 'uml.Class', name: 'Invoice' },
     ], connections: [{ id: 'invoice-document', type: 'inheritance', sourceId: 'invoice', targetId: 'document' }] });
     const mapper = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('documents/mapper/DocumentMapper.java'))?.source;
 
     expect(mapper).toContain('toEntity(CreateDocumentDto dto, DocumentEntity entity)');
     expect(mapper).not.toContain('new DocumentEntity()');
+
+    const promotedMapper = generateDtos(analysis, 'com.example.generated').find((file) => file.path.endsWith('jobs/mapper/JobMapper.java'))?.source;
+    expect(promotedMapper).toContain('toEntity(CreateJobDto dto, JobEntity entity)');
+    expect(promotedMapper).not.toContain('new JobEntity()');
   });
 });

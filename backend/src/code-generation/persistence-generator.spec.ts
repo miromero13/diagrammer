@@ -175,9 +175,12 @@ describe('generatePersistence', () => {
 
   it('promotes abstract operations on concrete persistence entities', () => {
     const analysis = normalizeAndValidateUml({ elements: [{ id: 'job', type: 'uml.Class', name: 'Job', methods: ['+run(): void {abstract}'] }], connections: [] });
-    const source = files(analysis).find((file) => file.path.endsWith('jobs/JobEntity.java'))?.source;
+    const generated = files(analysis);
+    const source = generated.find((file) => file.path.endsWith('jobs/JobEntity.java'))?.source;
     expect(source).toContain('public abstract class JobEntity');
     expect(source).toContain('public abstract void run();');
+    expect(generated.some((file) => file.path.endsWith('jobs/JobRepository.java'))).toBe(false);
+    expect(generated.some((file) => file.path.endsWith('V1__model.sql'))).toBe(true);
   });
 
   it('keeps interface inheritance out of relational tables and persistence files', () => {

@@ -1,6 +1,7 @@
 import { featurePackageName } from './feature-name';
 import { RelationalModel, UmlAnalysis, UmlElement } from './uml-analysis';
 import { SecurityResolution } from './security-resolution';
+import { isPromotedAbstract } from './uml-java';
 
 export type GeneratedServiceFile = { path: string; source: string };
 
@@ -111,7 +112,7 @@ const repositoryTables = (analysis: UmlAnalysis, security: SecurityResolution) =
   const elements = new Map(analysis.normalizedModel.elements.map((element) => [element.id, element]));
   return analysis.relationalModel.tables
     .map((table) => ({ table, element: elements.get(table.sourceElementId) }))
-    .filter((item): item is { table: Table; element: UmlElement } => item.element?.kind === 'class' && item.element.id !== security.principal?.id)
+    .filter((item): item is { table: Table; element: UmlElement } => item.element?.kind === 'class' && !isPromotedAbstract(item.element) && item.element.id !== security.principal?.id)
     .sort((a, b) => a.table.name.localeCompare(b.table.name));
 };
 

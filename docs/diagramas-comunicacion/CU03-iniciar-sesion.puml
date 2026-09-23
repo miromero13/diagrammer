@@ -1,0 +1,39 @@
+@startuml CU03-iniciar-sesion
+left to right direction
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontColor #1F1F1F
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam ArrowColor #2F5597
+skinparam ArrowFontColor #1F1F1F
+skinparam ArrowFontSize 12
+skinparam ArrowThickness 2
+
+skinparam actorBackgroundColor #FFFFFF
+skinparam actorBorderColor #2F5597
+skinparam actorFontColor #1F1F1F
+skinparam boundaryBackgroundColor #E2EFDA
+skinparam boundaryBorderColor #2F5597
+skinparam boundaryFontColor #1F1F1F
+skinparam controlBackgroundColor #D9E1F2
+skinparam controlBorderColor #2F5597
+skinparam controlFontColor #1F1F1F
+skinparam entityBackgroundColor #D9E1F2
+skinparam entityBorderColor #2F5597
+skinparam entityFontColor #1F1F1F
+
+actor ":Usuario" as usuario
+boundary ":PantallaAcceso" as pantalla
+control ":ServicioAutenticacion" as servicio
+entity ":RepositorioUsuarios" as repositorio
+
+usuario -right-> pantalla : 1: solicitarAcceso()
+pantalla -left-> usuario : 1.1: mostrarFormulario()
+usuario -right-> pantalla : 2: autenticar(credenciales)
+pantalla -right-> servicio : 2.1: validarCredenciales()
+servicio -right-> repositorio : 2.2: crearSesion()
+servicio -left-> pantalla : 3: mostrarInicio()
+
+@enduml

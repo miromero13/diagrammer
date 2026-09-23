@@ -1,0 +1,41 @@
+@startuml CU04-gestionar-perfil-credenciales
+left to right direction
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontColor #1F1F1F
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+skinparam ArrowColor #2F5597
+skinparam ArrowFontColor #1F1F1F
+skinparam ArrowFontSize 12
+skinparam ArrowThickness 2
+
+skinparam actorBackgroundColor #FFFFFF
+skinparam actorBorderColor #2F5597
+skinparam actorFontColor #1F1F1F
+skinparam boundaryBackgroundColor #E2EFDA
+skinparam boundaryBorderColor #2F5597
+skinparam boundaryFontColor #1F1F1F
+skinparam controlBackgroundColor #D9E1F2
+skinparam controlBorderColor #2F5597
+skinparam controlFontColor #1F1F1F
+skinparam entityBackgroundColor #D9E1F2
+skinparam entityBorderColor #2F5597
+skinparam entityFontColor #1F1F1F
+
+actor ":Usuario" as usuario
+boundary ":PantallaPerfil" as pantalla
+control ":ServicioPerfil" as servicio
+entity ":RepositorioUsuario" as repositorio
+
+usuario -right-> pantalla : 1: solicitarGestionPerfil()
+pantalla -right-> servicio : 1.1: cargarPerfil()
+usuario -right-> pantalla : 2: actualizarDatos(datos)
+pantalla -right-> servicio : 2.1: validarCambios(datos)
+servicio -right-> repositorio : 2.2: guardarPerfil(datos)
+usuario -right-> pantalla : 3: cambiarCredenciales()
+pantalla -right-> servicio : 3.1: actualizarCredenciales()
+servicio -left-> pantalla : 4: confirmarCambios()
+
+@enduml

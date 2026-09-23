@@ -22,7 +22,7 @@ describe('AiService', () => {
   } as any;
 
   const configService = {
-    get: jest.fn().mockReturnValue('test-gemini-key'),
+    get: jest.fn((key: string) => key === 'OPENAI_API_KEY' ? 'mock-key' : undefined),
   } as unknown as ConfigService;
 
   beforeEach(() => {
@@ -30,37 +30,53 @@ describe('AiService', () => {
     service = new AiService(interactionsRepository, configService);
   });
 
-  it('builds a multimodal Gemini payload', async () => {
+  it('builds a multimodal OpenAI payload and extracts only output text', async () => {
     mockedAxios.post.mockResolvedValue({
       data: {
-        candidates: [
-          {
-            content: {
-              parts: [{ text: 'ok' }],
-            },
-          },
-        ],
+        status: 'completed', output: [{ type: 'reasoning', content: [] }, { type: 'message', content: [{ type: 'output_text', text: 'ok' }] }],
       },
     } as any);
 
-    const response = await (service as any).callGemini('system prompt', [
-      { text: 'contexto' },
-      { inlineData: { mimeType: 'image/png', data: 'ZmFrZS1pbWFnZQ==' } },
+    const response = await service.callOpenAI('system prompt', [
+      { type: 'input_text', text: 'contexto' },
+      { type: 'input_image', image_url: 'data:image/png;base64,ZmFrZS1pbWFnZQ==' },
+      { type: 'input_file', filename: 'diagram.pdf', file_data: 'data:application/pdf;base64,YQ==' },
     ]);
 
     expect(response).toBe('ok');
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      expect.stringContaining(':generateContent?key=test-gemini-key'),
+      'https://api.openai.com/v1/responses',
       expect.objectContaining({
-        systemInstruction: { parts: [{ text: 'system prompt' }] },
-        contents: [{ role: 'user', parts: [{ text: 'contexto' }, { inlineData: { mimeType: 'image/png', data: 'ZmFrZS1pbWFnZQ==' } }] }],
+        model: 'gpt-4.1', instructions: 'system prompt',
+        input: [{ role: 'user', content: [{ type: 'input_text', text: 'contexto' }, { type: 'input_image', image_url: 'data:image/png;base64,ZmFrZS1pbWFnZQ==' }, { type: 'input_file', filename: 'diagram.pdf', file_data: 'data:application/pdf;base64,YQ==' }] }],
       }),
-      { timeout: 60000 },
+      { timeout: 60000, headers: { Authorization: 'Bearer mock-key', 'Content-Type': 'application/json' } },
     );
   });
 
-  it('parses AGENT commands locally without calling Gemini', async () => {
-    const callGeminiSpy = jest.spyOn(service as any, 'callGemini');
+  it('rejects unsupported binaries and empty or incomplete responses', async () => {
+    await expect(service.chat('owner', { message: 'Analyze', attachments: [{ mimeType: 'application/zip', base64: 'YQ==' }] })).rejects.toThrow('Unsupported attachment type');
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    mockedAxios.post.mockResolvedValueOnce({ data: { status: 'completed', output: [{ type: 'reasoning' }] } } as any);
+    await expect(service.chat('owner', { message: 'Explain this' })).rejects.toThrow('AI response contained no text');
+    mockedAxios.post.mockResolvedValueOnce({ data: { status: 'incomplete', output: [{ type: 'message', content: [{ type: 'output_text', text: 'partial' }] }] } } as any);
+    await expect(service.chat('owner', { message: 'Explain this' })).rejects.toThrow('AI response was not completed');
+  });
+
+  it('sends PDF and image attachments with data URLs through chat', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'Document reviewed' }] }] } } as any);
+    await service.chat('owner', { message: 'Explain these', mode: ChatAiMode.ASK, attachments: [
+      { name: 'design.pdf', mimeType: 'application/pdf', base64: 'data:application/pdf;base64,YQ==' },
+      { name: 'sketch.png', mimeType: 'image/png', base64: 'Yg==' },
+    ] });
+    expect(mockedAxios.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ input: [{ role: 'user', content: expect.arrayContaining([
+      { type: 'input_file', filename: 'design.pdf', file_data: 'data:application/pdf;base64,YQ==' },
+      { type: 'input_image', image_url: 'data:image/png;base64,Yg==' },
+    ]) }] }), expect.any(Object));
+  });
+
+  it('parses AGENT commands locally without calling OpenAI', async () => {
+    const callOpenAISpy = jest.spyOn(service, 'callOpenAI');
     const saveInteractionSpy = jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
 
     const result = await service.chat('user-1', {
@@ -69,7 +85,7 @@ describe('AiService', () => {
       diagramData: { elements: [{ id: 'post-id', name: 'Post' }] },
     } as any);
 
-    expect(callGeminiSpy).not.toHaveBeenCalled();
+    expect(callOpenAISpy).not.toHaveBeenCalled();
     const agentResult = result as any;
 
     expect(agentResult.mode).toBe(ChatAiMode.AGENT);
@@ -79,18 +95,47 @@ describe('AiService', () => {
     expect(saveInteractionSpy).toHaveBeenCalledWith('user-1', null, AIInteractionType.AGENT, expect.any(String), expect.any(String));
   });
 
-  it('keeps ASK requests on the Gemini path', async () => {
-    const callGeminiSpy = jest.spyOn(service as any, 'callGemini').mockResolvedValue('Respuesta general');
+  it('routes a freeform POS request to OpenAI with the AGENT prompt', async () => {
+    const call = jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created POS', actions: [
+      { type: 'create_class', data: { id: 'product-id', name: 'Product' } },
+    ] }));
+    const result = await service.chat('owner', { message: 'Crea una base de datos para un sistema pos' });
+    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_class'), expect.arrayContaining([
+      expect.objectContaining({ type: 'input_text', text: expect.stringContaining('Crea una base de datos para un sistema pos') }),
+    ]));
+    expect(result).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [{ type: 'create_class', data: { name: 'Product' } }] });
+  });
+
+  it.each([
+    'eliminar Missing',
+    'crear clase User; crear clase User',
+    'crear clase User; eliminar Missing',
+    'algo desconocido; eliminar Missing',
+    'crear clase User; algo desconocido',
+  ])('does not send recognized or mixed invalid commands to OpenAI: %s', async (message) => {
+    const call = jest.spyOn(service, 'callOpenAI');
+    const result = await service.chat('owner', { message, mode: ChatAiMode.AGENT });
+    expect(result).toMatchObject({ success: false, mode: ChatAiMode.AGENT, actions: [] });
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it('does not report success when freeform AI returns no actions', async () => {
+    jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created POS', actions: [] }));
+    expect(await service.chat('owner', { message: 'Crea una base de datos para un sistema pos' })).toMatchObject({ success: false, actions: [] });
+  });
+
+  it('keeps ASK requests on the OpenAI path', async () => {
+    const callOpenAISpy = jest.spyOn(service, 'callOpenAI').mockResolvedValue('Respuesta general');
     jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
 
     const result = await service.chat('user-1', { message: '¿Qué es una interfaz?', mode: ChatAiMode.ASK } as any);
 
-    expect(callGeminiSpy).toHaveBeenCalled();
+    expect(callOpenAISpy).toHaveBeenCalled();
     expect(result).toEqual({ success: true, message: 'Respuesta general', mode: ChatAiMode.ASK });
   });
 
-  it('keeps diagram questions on the Gemini path', async () => {
-    const callGeminiSpy = jest.spyOn(service as any, 'callGemini').mockResolvedValue('Una asociación representa una relación.');
+  it('keeps diagram questions on the OpenAI path', async () => {
+    const callOpenAISpy = jest.spyOn(service, 'callOpenAI').mockResolvedValue('Una asociación representa una relación.');
     jest.spyOn(service as any, 'saveInteraction').mockResolvedValue(undefined);
 
     await expect(service.chat('user-1', {
@@ -98,11 +143,11 @@ describe('AiService', () => {
       diagramData: { elements: [], connections: [] },
     } as any)).resolves.toMatchObject({ success: true, mode: ChatAiMode.ASK });
 
-    expect(callGeminiSpy).toHaveBeenCalled();
+    expect(callOpenAISpy).toHaveBeenCalled();
   });
 
-  it('creates diagram actions from an image using Gemini rather than the text command parser', async () => {
-    const call = jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Created User', actions: [
+  it('creates diagram actions from an image using OpenAI rather than the text command parser', async () => {
+    const call = jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created User', actions: [
       { type: 'create_class', data: { id: 'user-1', name: 'User' } },
       { type: 'create_relationship', data: { sourceId: 'user-1', targetId: 'existing', type: 'association' } },
     ] }));
@@ -111,20 +156,20 @@ describe('AiService', () => {
       { type: 'create_class', data: { id: 'user-1', name: 'User' } },
       { type: 'create_relationship', data: { sourceId: 'user-1', targetId: 'existing' } },
     ] });
-    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_relationship'), expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'YQ==' } }]));
+    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_relationship'), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]));
   });
 
   it('keeps questions with attachments in ASK mode', async () => {
-    const call = jest.spyOn(service, 'callGemini').mockResolvedValue('An interface is a contract.');
+    const call = jest.spyOn(service, 'callOpenAI').mockResolvedValue('An interface is a contract.');
     expect(await service.chat('owner', { message: 'What is this image?', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }] })).toMatchObject({ mode: ChatAiMode.ASK, message: 'An interface is a contract.' });
-    expect(call).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'YQ==' } }]));
+    expect(call).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]));
   });
 
   it.each([
     { message: '¿Qué es esta clase?', mode: ChatAiMode.AGENT },
     { message: '¿Podés crear una clase desde esta imagen?' },
   ])('honors explicit AGENT and interrogative edit requests: %j', async (input) => {
-    const call = jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Created', actions: [{ type: 'create_class', data: { id: 'new-id', name: 'User' } }] }));
+    const call = jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created', actions: [{ type: 'create_class', data: { id: 'new-id', name: 'User' } }] }));
     const result = await service.chat('owner', { ...input, attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }] });
     expect(result).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [{ type: 'create_class' }] });
     expect(call).toHaveBeenCalledTimes(1);
@@ -135,7 +180,7 @@ describe('AiService', () => {
     { attributes: ['replacement: string'], addAttributes: ['new: string'] },
     { attributes: ['replacement: string'], removeAttributes: ['old: string'] },
   ])('rejects incompatible attribute operations rather than partially applying: %j', async (changes) => {
-    jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Updated', actions: [
+    jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Updated', actions: [
       { type: 'create_class', data: { id: 'new-id', name: 'Other' } },
       { type: 'modify_element', data: { targetId: 'existing', ...changes } },
     ] }));
@@ -148,8 +193,8 @@ describe('AiService', () => {
     JSON.stringify({ message: 'Done', actions: [{ type: 'create_class', data: { name: 'User' } }, { type: 'unsupported', data: {} }] }),
     JSON.stringify({ message: 'Done', actions: [{ type: 'create_relationship', data: { sourceId: 'missing', targetId: 'existing' } }] }),
     JSON.stringify({ message: 'Done', actions: [{ type: 'modify_element', data: { targetId: 'missing', name: 'Other' } }] }),
-  ])('rejects invalid Gemini actions atomically: %s', async (response) => {
-    jest.spyOn(service, 'callGemini').mockResolvedValue(response);
+  ])('rejects invalid OpenAI actions atomically: %s', async (response) => {
+    jest.spyOn(service, 'callOpenAI').mockResolvedValue(response);
     const result = await service.chat('owner', { message: 'Create from the attached image', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }], diagramData: { elements: [{ id: 'existing', name: 'Existing' }] } });
     expect(result).toMatchObject({ success: false, mode: ChatAiMode.AGENT, actions: [] });
   });

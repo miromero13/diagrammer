@@ -30,6 +30,9 @@ const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const elementName = (element: DiagramElement) => text(element.name).replace(/^<<(?:interface|abstract|enumeration|enum)>>\n/i, '');
 const endpoint = (value: unknown) => typeof value === 'object' && value !== null ? text((value as { id?: unknown }).id) : text(value);
 
+export const containsDiagramCommand = (message: string): boolean => message.split(/[;\n]/).some((part) =>
+  /^(?:crear\s+(?:clase|interfaz|enum|relación)|agregar\s+atributo|eliminar\s+(?:atributo|relación)|renombrar|eliminar\s+\S+)(?=\s|$)/i.test(part.trim()));
+
 export const parseDiagramCommands = (message: string, diagramData?: DiagramData | null): DiagramCommandResult => {
   const commands = message.split(/[;\n]/).map((command) => command.trim()).filter(Boolean);
   if (commands.length === 0) return { success: false, message: guide, actions: [] };

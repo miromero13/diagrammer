@@ -8,15 +8,9 @@ import { randomUUID } from 'crypto';
 import { AIInteractionEntity } from './entities/ai-interaction.entity';
 import { AIInteractionType } from './enums/ai-interaction-type.enum';
 import { ChatAiAttachmentDto, ChatAiDto, ChatAiMode } from './dto/chat-ai.dto';
-import { parseDiagramCommands } from './diagram-command-parser';
+import { containsDiagramCommand, parseDiagramCommands } from './diagram-command-parser';
 
-type GeminiPart = {
-  text?: string;
-  inlineData?: {
-    mimeType: string;
-    data: string;
-  };
-};
+type OpenAIInputPart = { type: 'input_text'; text: string } | { type: 'input_image'; image_url: string } | { type: 'input_file'; filename: string; file_data: string };
 
 type DiagramContent = {
   elements: Array<Record<string, any>>;
@@ -48,7 +42,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
 
   private initialized = false;
   private apiKey?: string;
-  private model = 'gemini-3.6-flash';
+  private model = 'gpt-4.1';
 
   constructor(
     @InjectRepository(AIInteractionEntity)
@@ -59,11 +53,8 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
   private initialize() {
     if (this.initialized) return;
 
-    this.apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    const configured = !!this.apiKey && this.apiKey !== 'your-gemini-pro-api-key-here';
-    if (!configured) {
-      this.apiKey = undefined;
-    }
+    this.apiKey = this.configService.get<string>('OPENAI_API_KEY')?.trim() || undefined;
+    this.model = this.configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-4.1';
     this.initialized = true;
   }
 
@@ -146,18 +137,23 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     return ChatAiMode.ASK;
   }
 
-  private buildUserParts(payload: ChatAiDto, context: string): GeminiPart[] {
-    const parts: GeminiPart[] = [{ text: `${context}\n\nUsuario: ${payload.message}`.trim() }];
+  private buildUserParts(payload: ChatAiDto, context: string): OpenAIInputPart[] {
+    const parts: OpenAIInputPart[] = [{ type: 'input_text', text: `${context}\n\nUsuario: ${payload.message}`.trim() }];
     const attachments = payload.attachments || [];
 
     attachments.forEach((attachment) => {
-      if (attachment?.base64?.trim() && attachment?.mimeType?.trim()) {
-        parts.push({
-          inlineData: {
-            mimeType: attachment.mimeType.trim(),
-            data: this.normalizeBase64(attachment.base64.trim()),
-          },
-        });
+      if (!attachment?.base64?.trim()) {
+        if (attachment?.text?.trim()) return;
+        throw new BadRequestException('Attachment has no content');
+      }
+      const mime = attachment.mimeType?.trim().toLowerCase();
+      const data = this.normalizeBase64(attachment.base64.trim());
+      if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mime || '')) {
+        parts.push({ type: 'input_image', image_url: `data:${mime};base64,${data}` });
+      } else if (mime === 'application/pdf') {
+        parts.push({ type: 'input_file', filename: attachment.name?.trim() || 'document.pdf', file_data: `data:application/pdf;base64,${data}` });
+      } else {
+        throw new BadRequestException('Unsupported attachment type. Upload a PNG, JPEG, WebP, GIF, PDF, or text file.');
       }
     });
 
@@ -316,24 +312,29 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     return content;
   }
 
-  async callGemini(systemPrompt: string, userParts: GeminiPart[]) {
+  async callOpenAI(systemPrompt: string, userParts: OpenAIInputPart[]) {
     this.initialize();
 
     if (!this.apiKey) {
-      throw new ServiceUnavailableException('AI service not available. Please configure GEMINI_API_KEY.');
+      throw new ServiceUnavailableException('AI service not available. Please configure OPENAI_API_KEY.');
     }
 
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+      'https://api.openai.com/v1/responses',
       {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: userParts.length > 0 ? userParts : [{ text: 'Analiza la solicitud.' }] }],
-        generationConfig: { temperature: 0.2 },
+        model: this.model,
+        instructions: systemPrompt,
+        input: [{ role: 'user', content: userParts }],
       },
-      { timeout: 60000 },
+      { timeout: 60000, headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' } },
     );
 
-    return response.data?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('') || '';
+    if (response.data?.status && response.data.status !== 'completed') throw new ServiceUnavailableException('AI response was not completed');
+    const output = response.data?.output;
+    const text = (Array.isArray(output) ? output : []).flatMap((item: any) => item?.type === 'message' && Array.isArray(item.content)
+      ? item.content.filter((part: any) => part?.type === 'output_text' && typeof part.text === 'string').map((part: any) => part.text) : []).join('') || '';
+    if (!text.trim()) throw new ServiceUnavailableException('AI response contained no text');
+    return text;
   }
 
   private extractJsonPayload(aiResponse: string) {
@@ -443,8 +444,10 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
 
     if (mode === ChatAiMode.AGENT && !payload.attachments?.length && !payload.sourceText?.trim()) {
       const result = parseDiagramCommands(payload.message, payload.diagramData as any);
-      await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.AGENT, payload.message, result.message);
-      return { success: result.success, message: result.message, mode: ChatAiMode.AGENT, actions: result.actions };
+      if (result.success || containsDiagramCommand(payload.message)) {
+        await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.AGENT, payload.message, result.message);
+        return { success: result.success, message: result.message, mode: ChatAiMode.AGENT, actions: result.actions };
+      }
     }
 
     const systemPrompt = this.systemPrompts[mode] || this.systemPrompts.ask;
@@ -452,7 +455,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const userParts = this.buildUserParts(payload, context);
 
     try {
-      const aiResponse = await this.callGemini(systemPrompt, userParts);
+      const aiResponse = await this.callOpenAI(systemPrompt, userParts);
       const processedResponse = mode === ChatAiMode.AGENT
         ? this.processAgentResponse(aiResponse, payload.diagramData)
         : { message: aiResponse, mode: ChatAiMode.ASK, success: true };
@@ -461,16 +464,10 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
 
       return processedResponse;
     } catch (error: any) {
-      console.error('========== GEMINI ERROR ==========' );
-      console.error('STATUS:', error?.response?.status);
-      console.error('DATA:', JSON.stringify(error?.response?.data, null, 2));
-      console.error('MESSAGE:', error?.message);
-      console.error('==================================');
-
       const status = error?.response?.status;
 
       if (status === 401 || status === 403) {
-        throw new UnauthorizedException('Error de autorización con Gemini');
+        throw new UnauthorizedException('Error de autorización con OpenAI');
       }
 
       if (status === 429) {

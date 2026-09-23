@@ -27,6 +27,7 @@ export const EnvConfig = () => ({
   MAILER_SECRET_KEY: process.env.MAILER_SECRET_KEY,
   MAILER_PORT: process.env.MAILER_PORT || 587,
 
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4.1',
   SOCKET_CORS_ORIGIN: process.env.SOCKET_CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000',
 });

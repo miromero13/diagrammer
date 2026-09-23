@@ -133,7 +133,7 @@ Payload:
 
 ---
 
-* [ ] **Fase 3: Autenticación y autorización**
+* [x] **Fase 3: Autenticación y autorización**
 
   Esta fase se ejecuta inmediatamente después del análisis UML.
 
@@ -147,26 +147,26 @@ Payload:
 
   **Backend**
 
-  * [ ] Leer la configuración enviada en el formulario.
-  * [ ] Leer y aplicar `ROLES_AND_PERMISSIONS.md`.
-  * [ ] Seleccionar el caso correcto.
-  * [ ] Conservar, modificar o eliminar JWT, roles, permisos, filtros, providers, tablas y endpoints según el caso.
+  * [x] Leer la configuración enviada en el formulario.
+  * [x] Leer y aplicar `ROLES_AND_PERMISSIONS.md`.
+  * [x] Seleccionar el caso correcto.
+  * [x] Conservar, modificar o eliminar JWT, roles, permisos, filtros, providers, tablas y endpoints según el caso.
 
   Casos de autenticación:
 
-  * [ ] Caso 1: Sin autenticación.
-  * [ ] Caso 2: Autenticación básica sin roles ni permisos.
-  * [ ] Caso 3: Rol como atributo de la entidad principal.
-  * [ ] Caso 4: Un rol mediante tabla, sin permisos.
-  * [ ] Caso 5: Un rol mediante tabla con permisos.
-  * [ ] Caso 6: Múltiples roles con permisos.
-  * [ ] Caso 7: Permisos directos sin roles.
+  * [x] Caso 1: Sin autenticación.
+  * [x] Caso 2: Autenticación básica sin roles ni permisos.
+  * [x] Caso 3: Rol como atributo de la entidad principal.
+  * [x] Caso 4: Un rol mediante tabla, sin permisos.
+  * [x] Caso 5: Un rol mediante tabla con permisos.
+  * [x] Caso 6: Múltiples roles con permisos.
+  * [x] Caso 7: Permisos directos sin roles.
 
   **Frontend**
 
-  * [ ] Enviar clase principal, rol y permiso seleccionados.
-  * [ ] Mostrar la etapa **Generando autenticación y seguridad**.
-  * [ ] Mostrar la configuración elegida.
+  * [x] Enviar clase principal, rol y permiso seleccionados.
+  * [x] Mostrar la etapa **Generando autenticación y seguridad**.
+  * [x] Mostrar la configuración elegida.
 
   **Resultado:** ZIP con seguridad adaptada al diagrama y al formulario.
 

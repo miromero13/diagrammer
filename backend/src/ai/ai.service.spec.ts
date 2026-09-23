@@ -101,6 +101,59 @@ describe('AiService', () => {
     expect(callGeminiSpy).toHaveBeenCalled();
   });
 
+  it('creates diagram actions from an image using Gemini rather than the text command parser', async () => {
+    const call = jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Created User', actions: [
+      { type: 'create_class', data: { id: 'user-1', name: 'User' } },
+      { type: 'create_relationship', data: { sourceId: 'user-1', targetId: 'existing', type: 'association' } },
+    ] }));
+    const result = await service.chat('owner', { message: 'Create a diagram from this image', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }], diagramData: { elements: [{ id: 'existing', name: 'Existing' }] } });
+    expect(result).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [
+      { type: 'create_class', data: { id: 'user-1', name: 'User' } },
+      { type: 'create_relationship', data: { sourceId: 'user-1', targetId: 'existing' } },
+    ] });
+    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_relationship'), expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'YQ==' } }]));
+  });
+
+  it('keeps questions with attachments in ASK mode', async () => {
+    const call = jest.spyOn(service, 'callGemini').mockResolvedValue('An interface is a contract.');
+    expect(await service.chat('owner', { message: 'What is this image?', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }] })).toMatchObject({ mode: ChatAiMode.ASK, message: 'An interface is a contract.' });
+    expect(call).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'YQ==' } }]));
+  });
+
+  it.each([
+    { message: '¿Qué es esta clase?', mode: ChatAiMode.AGENT },
+    { message: '¿Podés crear una clase desde esta imagen?' },
+  ])('honors explicit AGENT and interrogative edit requests: %j', async (input) => {
+    const call = jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Created', actions: [{ type: 'create_class', data: { id: 'new-id', name: 'User' } }] }));
+    const result = await service.chat('owner', { ...input, attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }] });
+    expect(result).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [{ type: 'create_class' }] });
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { addAttributes: ['new: string'], removeAttributes: ['old: string'] },
+    { attributes: ['replacement: string'], addAttributes: ['new: string'] },
+    { attributes: ['replacement: string'], removeAttributes: ['old: string'] },
+  ])('rejects incompatible attribute operations rather than partially applying: %j', async (changes) => {
+    jest.spyOn(service, 'callGemini').mockResolvedValue(JSON.stringify({ message: 'Updated', actions: [
+      { type: 'create_class', data: { id: 'new-id', name: 'Other' } },
+      { type: 'modify_element', data: { targetId: 'existing', ...changes } },
+    ] }));
+    expect(await service.chat('owner', { message: 'Modify this diagram', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }], diagramData: { elements: [{ id: 'existing', name: 'Existing' }] } })).toMatchObject({ success: false, mode: ChatAiMode.AGENT, actions: [] });
+  });
+
+  it.each([
+    'not json',
+    JSON.stringify({ message: 'Done', actions: [] }),
+    JSON.stringify({ message: 'Done', actions: [{ type: 'create_class', data: { name: 'User' } }, { type: 'unsupported', data: {} }] }),
+    JSON.stringify({ message: 'Done', actions: [{ type: 'create_relationship', data: { sourceId: 'missing', targetId: 'existing' } }] }),
+    JSON.stringify({ message: 'Done', actions: [{ type: 'modify_element', data: { targetId: 'missing', name: 'Other' } }] }),
+  ])('rejects invalid Gemini actions atomically: %s', async (response) => {
+    jest.spyOn(service, 'callGemini').mockResolvedValue(response);
+    const result = await service.chat('owner', { message: 'Create from the attached image', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }], diagramData: { elements: [{ id: 'existing', name: 'Existing' }] } });
+    expect(result).toMatchObject({ success: false, mode: ChatAiMode.AGENT, actions: [] });
+  });
+
   it('returns diagram chat messages in chronological order', async () => {
     interactionsRepository.find.mockResolvedValue([
       {

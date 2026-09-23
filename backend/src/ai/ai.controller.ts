@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards, ValidationPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -15,9 +15,11 @@ export class AiController {
 
   @Post('chat')
   @ApiConsumes('application/json', 'multipart/form-data')
-  async chat(@Req() req: any, @Body() body: ChatAiDto) {
+  async chat(@Req() req: any, @Body() body: any) {
     const contentType = String(req.headers?.['content-type'] || '');
-    const payload = contentType.includes('multipart/form-data') ? await buildChatPayloadFromMultipart(req) : body;
+    const input = contentType.includes('multipart/form-data') ? await buildChatPayloadFromMultipart(req) : body;
+    const payload: ChatAiDto = await new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } })
+      .transform(input, { type: 'body', metatype: ChatAiDto });
     const message = payload?.message?.trim();
 
     if (!message) {

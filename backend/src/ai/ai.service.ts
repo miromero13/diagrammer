@@ -43,52 +43,7 @@ Puedes:
 - Validar buenas prácticas
 
 Responde siempre en español, de manera clara y educativa. Si no tienes información sobre el diagrama, pregunta por más detalles.`,
-    agent: `Eres un asistente especializado en bases de datos, diagramas entidad-relación y UML. Tu trabajo es crear un esquema desde cero o corregir uno existente a partir de texto, imagen o documento.
-
-Debes poder:
-- Crear una base de datos desde cero usando una imagen, un documento o una descripción textual.
-- Corregir un esquema existente.
-- Cambiar relaciones entre tablas o entidades.
-- Renombrar tablas, atributos o campos.
-- Agregar o eliminar campos, tablas y relaciones.
-
-Reglas:
-- Si no hay diagrama actual, genera una propuesta completa desde cero.
-- Si hay diagrama actual, devuelve solo cambios incrementales y preserva IDs existentes siempre que sea posible.
-- Prioriza tablas o entidades, atributos o campos, claves primarias, claves foráneas y cardinalidades.
-- Si la entrada es una imagen o un documento, interpreta el contenido y úsalo como fuente principal.
-
-    Responde SIEMPRE en JSON válido con esta estructura:
-{
-  "message": "Descripción breve del resultado",
-  "actions": [
-    {
-      "type": "create_class|create_interface|create_abstract_class|create_relationship|modify_element|delete_element",
-      "data": {
-        "name": "Nombre de la tabla o entidad",
-        "attributes": ["id: uuid", "name: string"],
-        "methods": [],
-        "position": {"x": 100, "y": 100}
-      }
-    }
-  ],
-}
-
-Para relaciones usa:
-{
-  "type": "create_relationship",
-  "data": {
-    "type": "association|inheritance|implementation|composition|aggregation",
-    "sourceId": "id_origen",
-    "targetId": "id_destino",
-    "sourceMultiplicity": "1",
-    "targetMultiplicity": "*"
-  }
-}
-
-Para modificaciones usa "modify_element" con cambios concretos, por ejemplo renombrar atributos, cambiar relaciones o actualizar tipos.
-Cuando sea una modificación, responde solo con las acciones puntuales necesarias, no con el diagrama completo.
-Responde siempre en español pero las claves del JSON deben mantenerse en inglés.`,
+    agent: `Interpret the user's requested diagram creation or edit using the attached image/document and current diagram. Return ONLY a JSON object: {"message":"brief result","actions":[{"type":"create_class","data":{"id":"unique-id","name":"User","attributes":[],"methods":[],"position":{"x":100,"y":100}}}]}. Actions must be nonempty and directly executable. Supported types: create_class, create_interface, create_abstract_class, create_enum, create_relationship, modify_element, delete_element. Create nodes with unique ids and names; create_enum also needs literals (strings). For create_relationship use data {"id":"unique-id","type":"association|dependency|inheritance|implementation|composition|aggregation","sourceId":"existing-or-new-node-id","targetId":"existing-or-new-node-id","sourceMultiplicity":"1","targetMultiplicity":"*"}. For modify_element use data {"targetId":"existing-node-id","name":"NewName"} or attributes/methods/literals/position/addAttributes/removeAttributes. For delete_element use data {"targetId":"existing-node-or-edge-id"}. Use exact existing IDs from the diagram; new relationship endpoints must reference existing or created node IDs. Do not use names as references. Only emit fields supported by these actions; no explanatory prose or markdown outside JSON. If the attachment does not contain enough information, return {"message":"Cannot determine diagram changes","actions":[]}.`,
   };
 
   private initialized = false;
@@ -134,7 +89,7 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
         context += '\nEntidades actuales:\n';
         elements.forEach((element: any) => {
           const name = element.name?.replace(/<<.*?>>\n/, '') || 'Sin nombre';
-          context += `- ${name}`;
+          context += `- ${name} (id: ${element.id ?? 'unknown'})`;
           if (element.attributes?.length) context += ` (${element.attributes.length} atributos)`;
           if (element.methods?.length) context += ` (${element.methods.length} métodos)`;
           context += '\n';
@@ -184,10 +139,8 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
 
   private inferMode(payload: ChatAiDto) {
     if (payload.mode) return payload.mode;
-
-    if (payload.sourceText?.trim() || (payload.attachments?.length ?? 0) > 0) return ChatAiMode.ASK;
-
-    const agentKeywords = /(crear|generar|diseñar|construir|corregir|modificar|actualizar|renombrar|relacion|tabla|atributo|campo|documento|imagen|esquema|base de datos)/i;
+    const agentKeywords = /\b(crear|crea|genera|generar|diseña|diseñar|construye|construir|corrige|corregir|modifica|modificar|actualiza|actualizar|renombra|renombrar|agrega|agregar|añade|elimina|eliminar|create|generate|design|build|edit|modify|update|rename|add|delete|remove|fix)\b/i;
+    if (/^\s*¿?\s*(?:qué|que es|cómo|como|cuál|cuáles|por qué|what|how|why|explain)\b/i.test(payload.message || '')) return ChatAiMode.ASK;
     if (agentKeywords.test(payload.message || '')) return ChatAiMode.AGENT;
 
     return ChatAiMode.ASK;
@@ -396,62 +349,69 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
     return null;
   }
 
-  private processAgentResponse(aiResponse: string): AgentResponse | { message: string; mode: ChatAiMode.ASK } {
+  private processAgentResponse(aiResponse: string, diagramData: any): AgentResponse & { success: boolean } {
     try {
       const jsonPayload = this.extractJsonPayload(aiResponse);
-      if (jsonPayload) {
-        const jsonResponse = JSON.parse(jsonPayload);
-        if (jsonResponse.message && jsonResponse.actions) {
-          const actions = this.validateActions(jsonResponse.actions);
-          return {
-            message: jsonResponse.message,
-            actions,
-            mode: ChatAiMode.AGENT,
-          };
-        }
-      }
-
-      return { message: aiResponse, mode: ChatAiMode.ASK };
+      const parsed = JSON.parse(jsonPayload || 'null');
+      const actions = this.validateActions(parsed?.actions, diagramData);
+      if (typeof parsed?.message !== 'string' || !parsed.message.trim() || !actions) throw new Error('Invalid diagram response');
+      return { success: true, message: parsed.message, actions, mode: ChatAiMode.AGENT };
     } catch {
-      return { message: aiResponse, mode: ChatAiMode.ASK };
+      return { success: false, message: 'Could not apply diagram changes. Please clarify your request.', actions: [], mode: ChatAiMode.AGENT };
     }
   }
 
-  private validateActions(actions: unknown) {
-    if (!Array.isArray(actions)) return [];
+  private validateActions(actions: unknown, diagramData: any): Array<Record<string, any>> | null {
+    if (!Array.isArray(actions) || !actions.length) return null;
+    const content = this.normalizeDiagramContent(diagramData);
+    const nodeIds = new Set(content.elements.map((item) => item.id));
+    const edgeIds = new Set(content.connections.map((item) => item.id));
+    const names = new Set(content.elements.map((item) => String(item.name).toLowerCase()));
+    const string = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
+    const strings = (value: unknown) => Array.isArray(value) && value.every(string);
+    const position = (value: any) => value && Number.isFinite(value.x) && Number.isFinite(value.y);
+    const allowed = (data: any, keys: string[]) => Object.keys(data).every((key) => keys.includes(key));
+    const nodeActions = ['create_class', 'create_interface', 'create_abstract_class', 'create_enum'];
+    const valid: Array<Record<string, any>> = [];
 
-    return actions.filter((action: any) => {
-      if (!action?.type || !action?.data) return false;
-      return [
-        'create_class',
-        'create_interface',
-        'create_abstract_class',
-        'create_relationship',
-        'modify_element',
-        'delete_element',
-        'rename_element',
-        'rename_attribute',
-        'add_attribute',
-        'remove_attribute',
-        'update_relationship',
-      ].includes(action.type);
-    }).map((action: any) => {
-      const data = { ...action.data };
-
-      if (['create_class', 'create_interface', 'create_abstract_class'].includes(action.type)) {
-        data.id = data.id || randomUUID();
-      }
-
-      if (!data.position && ['create_class', 'create_interface', 'create_abstract_class'].includes(action.type)) {
-        data.position = { x: 100, y: 100 };
-      }
-
-      if (action.type === 'modify_element' && !data.targetId && data.id) {
-        data.targetId = data.id;
-      }
-
-      return { ...action, data };
-    });
+    for (const action of actions) {
+      if (!action || typeof action !== 'object' || Object.keys(action).some((key) => !['type', 'data'].includes(key)) || !action.data || typeof action.data !== 'object' || Array.isArray(action.data)) return null;
+      const { type, data } = action;
+      if (nodeActions.includes(type)) {
+        if (!allowed(data, ['id', 'name', 'attributes', 'methods', 'literals', 'position']) || !string(data.name) ||
+          (data.attributes !== undefined && !strings(data.attributes)) || (data.methods !== undefined && !strings(data.methods)) ||
+          (data.literals !== undefined && !strings(data.literals)) || (type === 'create_enum' && !strings(data.literals)) || (data.position !== undefined && !position(data.position))) return null;
+        const id = data.id ?? randomUUID();
+        if (!string(id) || nodeIds.has(id) || names.has(data.name.toLowerCase())) return null;
+        nodeIds.add(id);
+        names.add(data.name.toLowerCase());
+        valid.push({ type, data: { ...data, id, position: data.position ?? { x: 100, y: 100 } } });
+      } else if (type === 'create_relationship') {
+        if (!allowed(data, ['id', 'type', 'sourceId', 'targetId', 'sourceMultiplicity', 'targetMultiplicity']) ||
+          !string(data.sourceId) || !string(data.targetId) || !nodeIds.has(data.sourceId) || !nodeIds.has(data.targetId) || data.sourceId === data.targetId ||
+          (data.type !== undefined && !['association', 'dependency', 'inheritance', 'implementation', 'composition', 'aggregation'].includes(data.type)) ||
+          (data.sourceMultiplicity !== undefined && !string(data.sourceMultiplicity)) || (data.targetMultiplicity !== undefined && !string(data.targetMultiplicity))) return null;
+        const id = data.id ?? randomUUID();
+        if (!string(id) || edgeIds.has(id)) return null;
+        edgeIds.add(id);
+        valid.push({ type, data: { ...data, id } });
+      } else if (type === 'modify_element') {
+        if (!allowed(data, ['targetId', 'name', 'attributes', 'methods', 'literals', 'position', 'addAttributes', 'removeAttributes']) ||
+          !string(data.targetId) || !nodeIds.has(data.targetId) || Object.keys(data).length < 2 ||
+          (data.name !== undefined && !string(data.name)) ||
+          [data.attributes, data.addAttributes, data.removeAttributes].filter((value) => value !== undefined).length > 1 ||
+          ['attributes', 'methods', 'literals', 'addAttributes', 'removeAttributes'].some((key) => data[key] !== undefined && !strings(data[key])) ||
+          (data.position !== undefined && !position(data.position))) return null;
+        valid.push(action);
+      } else if (type === 'delete_element') {
+        if (!allowed(data, ['targetId']) || !string(data.targetId) || (!nodeIds.has(data.targetId) && !edgeIds.has(data.targetId))) return null;
+        if (nodeIds.delete(data.targetId)) {
+          for (const connection of content.connections) if (connection.sourceId === data.targetId || connection.targetId === data.targetId) edgeIds.delete(connection.id);
+        } else edgeIds.delete(data.targetId);
+        valid.push(action);
+      } else return null;
+    }
+    return valid;
   }
 
   private async saveInteraction(userId: string, diagramId: string | null, interactionType: AIInteractionType, prompt: string, response: string) {
@@ -481,7 +441,7 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
 
     const mode = this.inferMode(payload);
 
-    if (mode === ChatAiMode.AGENT) {
+    if (mode === ChatAiMode.AGENT && !payload.attachments?.length && !payload.sourceText?.trim()) {
       const result = parseDiagramCommands(payload.message, payload.diagramData as any);
       await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.AGENT, payload.message, result.message);
       return { success: result.success, message: result.message, mode: ChatAiMode.AGENT, actions: result.actions };
@@ -493,11 +453,13 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
 
     try {
       const aiResponse = await this.callGemini(systemPrompt, userParts);
-      const processedResponse = { message: aiResponse, mode: ChatAiMode.ASK };
+      const processedResponse = mode === ChatAiMode.AGENT
+        ? this.processAgentResponse(aiResponse, payload.diagramData)
+        : { message: aiResponse, mode: ChatAiMode.ASK, success: true };
 
-      await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.ASK, payload.message, aiResponse);
+      if (processedResponse.success) await this.saveInteraction(userId, payload.diagramId || null, mode === ChatAiMode.AGENT ? AIInteractionType.AGENT : AIInteractionType.ASK, payload.message, processedResponse.message);
 
-      return { success: true, ...processedResponse };
+      return processedResponse;
     } catch (error: any) {
       console.error('========== GEMINI ERROR ==========' );
       console.error('STATUS:', error?.response?.status);
@@ -518,6 +480,8 @@ Responde siempre en español pero las claves del JSON deben mantenerse en inglé
       if (error instanceof ServiceUnavailableException) {
         throw error;
       }
+
+      if (error instanceof BadRequestException) throw error;
 
       throw new ServiceUnavailableException('Internal server error processing AI request');
     }

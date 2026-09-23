@@ -1734,6 +1734,8 @@ const DiagramFlow = () => {
         attachments: chatAttachments,
       })
 
+      if (!response.success) throw new Error(response.message || 'Could not apply diagram changes')
+
       if (Array.isArray(response.actions) && response.actions.length > 0) {
         applyAiActions(response.actions as Array<Record<string, any>>)
       }

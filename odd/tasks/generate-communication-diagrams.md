@@ -2,33 +2,33 @@
 
 ## Objective
 
-Deliver the CU02, CU03, and CU04 communication diagrams with faithful UML 2.5 communication-diagram notation while preserving the Spanish use-case intent and Enterprise Architect palette.
+Deliver the CU02, CU03, and CU04 communication diagrams with faithful UML 2.5 communication-diagram notation grounded in the current frontend and backend implementation.
 
 ## Checklist
 
-- [x] T1: Define the four-participant actor, boundary, control, and entity layout.
-- [x] T2: Preserve the Spanish use-case messages and sensible hierarchical numbering.
-- [x] T3: Use PlantUML declarations and solid labeled arrows for the communication diagrams.
-- [x] T4: Keep the final delivery directory limited to the three `.puml` artifacts.
-- [x] T5: Validate PlantUML source structure, UML vocabulary, palette, labels, and delivery contents.
-- [x] T6: Replace the Draw.io XML deliverables with PlantUML source files.
+- [x] T1: Map CU02, CU03, and CU04 to the actual frontend and backend call paths.
+- [x] T2: Rewrite CU02 with the registration flow through AuthContext, API, controller, service, repository, bcrypt, JWT, and storage.
+- [x] T3: Rewrite CU03 with the login flow through AuthContext, API, controller, service, repository, bcrypt, JWT, and storage.
+- [x] T4: Rewrite CU04 with the implemented profile-view flow and explicitly document disconnected edit/password operations.
+- [x] T5: Validate PlantUML source structure, numbering, code references, and delivery contents.
 
-## PlantUML replacement
+## Current implementation evidence
 
-PlantUML is authoritative for the final diagrams. The three Draw.io XML deliverables were deleted rather than retained alongside the `.puml` sources. Each source uses `actor`, `boundary`, `control`, and `entity` declarations, the Enterprise Architect-like palette, a left-to-right layout, and solid labeled message arrows.
+- CU02 uses `RegisterPage`, `AuthContext.register`, `api.auth.register`, `AuthController.register`, `AuthService.register`, TypeORM persistence, bcrypt, token generation, local storage, and dashboard navigation.
+- CU03 uses `LoginPage`, `AuthContext.login`, `api.auth.login`, `AuthController.login`, `AuthService.login`, TypeORM lookup/update, bcrypt comparison, token generation, local storage, and dashboard navigation.
+- CU04 currently supports authenticated profile access and profile retrieval. The profile save button, frontend profile update request, and password-change form are not wired; the diagrams must not present those paths as executable behavior.
 
 ## Verification
 
-- PlantUML renderer: unavailable locally; no PNG/SVG outputs were generated.
-- Structural source validation: passed for all three files; each has balanced `@startuml`/`@enduml`, the four required UML declarations, the requested palette declarations, and every required message label.
-- Delivery directory: exactly the three `.puml` files; no `.drawio` files remain.
-- `git diff --check`: passed.
-- Commit identity: `feat/communication-diagrams` — `feat(diagrams): replace Draw.io communication artifacts with PlantUML`.
+- `python3` structural validator: PASS — CU02 has 22 numbered solid arrows, CU03 has 24, and CU04 has 19; all required code-path references are present.
+- `plantuml -utxt docs/diagramas-comunicacion/CU02-registrar-usuario.puml docs/diagramas-comunicacion/CU03-iniciar-sesion.puml docs/diagramas-comunicacion/CU04-gestionar-perfil-credenciales.puml`: unavailable because `plantuml` is not installed (`zsh: command not found: plantuml`); no PNG/SVG files were generated.
+- Runtime harness: N/A — documentation-only change; application code and runtime behavior were not modified.
+- Rollback boundary: revert the three `.puml` files and this task document only.
 
 ## Progress
 
-Current: complete.
+Current: CU02, CU03, and CU04 rewritten from the verified implementation paths; source validation complete.
 
 ## Next step
 
-No further implementation step remains for T6.
+Next: install PlantUML only if rendered ASCII verification is required. No commit was created because the user explicitly requested uncommitted changes.

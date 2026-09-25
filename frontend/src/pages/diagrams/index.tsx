@@ -1166,20 +1166,36 @@ const DiagramFlow = () => {
   const applyAiActions = useCallback((actions: Array<Record<string, any>>) => {
     if (!Array.isArray(actions) || actions.length === 0) return
 
+    const availableNodes = new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }]))
+    const availableEdges = new Map(edgesRef.current.map((edge) => [edge.id, { source: edge.source, target: edge.target }]))
+    for (const action of actions) {
+      const data = action.data ?? {}
+      if (['create_class', 'create_interface', 'create_abstract_class', 'create_enum'].includes(action.type)) {
+        availableNodes.set(data.id, { type: action.type === 'create_enum' ? 'uml.Enumeration' : action.type === 'create_interface' ? 'uml.Interface' : 'uml.Class', name: data.name })
+      } else if (action.type === 'create_relationship') {
+        if (!availableNodes.has(data.sourceId) || !availableNodes.has(data.targetId)) {
+          setChatError('Cannot apply relationship: endpoint is missing.')
+          return
+        }
+        availableEdges.set(data.id, { source: data.sourceId, target: data.targetId })
+      } else if (action.type === 'delete_element') {
+        if (availableNodes.delete(data.targetId)) {
+          for (const [id, edge] of availableEdges) if (edge.source === data.targetId || edge.target === data.targetId) availableEdges.delete(id)
+        } else availableEdges.delete(data.targetId)
+      }
+    }
     pushHistory()
+
+    const batchNodes = new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }]))
+    const batchEdges = new Set(edgesRef.current.map((edge) => edge.id))
 
     const resolveNodeId = (reference: any) => {
       const raw = typeof reference === 'object' ? reference?.id ?? reference?.name ?? reference?.alias : reference
       if (!raw) return ''
       const value = String(raw)
       const lower = value.toLowerCase()
-      const existing = nodesRef.current.find((node) =>
-        node.id === value ||
-        node.id === lower ||
-        stripPrefix(node.data.name).toLowerCase() === lower ||
-        node.data.name.toLowerCase() === lower
-      )
-      return existing?.id ?? value
+      const existing = [...batchNodes].find(([id, node]) => id === value || id === lower || stripPrefix(node.name).toLowerCase() === lower || node.name.toLowerCase() === lower)
+      return existing?.[0] ?? value
     }
 
     const resolveEdgeId = (reference: any) => {
@@ -1198,6 +1214,7 @@ const DiagramFlow = () => {
       if (type === 'create_class' || type === 'create_interface' || type === 'create_abstract_class' || type === 'create_enum') {
         const id = String(data.id ?? createId())
         const kind: UmlKind = type === 'create_interface' ? 'interface' : type === 'create_abstract_class' ? 'abstract' : type === 'create_enum' ? 'enum' : 'class'
+        batchNodes.set(id, { type: kindToType(kind), name: String(data.name ?? 'Class') })
         const nextNode: Node<DiagramNodeData> = {
           id,
           type: 'umlNode',
@@ -1228,7 +1245,8 @@ const DiagramFlow = () => {
         if (!source || !target) return
 
         const relationType = normalizeRelationType(data.type ?? data.relationType ?? 'association')
-        const endpoints = normalizeEnumUsageEndpoints(relationType, { source, target }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
+        const endpoints = normalizeEnumUsageEndpoints(relationType, { source, target }, batchNodes)
+        batchEdges.add(id)
         const nextEdge: Edge<DiagramEdgeData> = {
           id,
           source: endpoints.source,
@@ -1253,14 +1271,15 @@ const DiagramFlow = () => {
 
       if (type === 'delete_element') {
         const targetId = resolveNodeId(data.targetId ?? data.id)
-        const nodeExists = nodesRef.current.some((node) => node.id === targetId)
+        const nodeExists = batchNodes.has(targetId)
         if (nodeExists) {
+          batchNodes.delete(targetId)
           setNodes((current) => current.filter((node) => node.id !== targetId))
           setEdges((current) => current.filter((edge) => edge.source !== targetId && edge.target !== targetId))
           return
         }
         const edgeId = resolveEdgeId(data.targetId ?? data.id)
-        if (edgesRef.current.some((edge) => edge.id === edgeId)) setEdges((current) => current.filter((edge) => edge.id !== edgeId))
+        if (batchEdges.delete(edgeId)) setEdges((current) => current.filter((edge) => edge.id !== edgeId))
         return
       }
 
@@ -1728,6 +1747,7 @@ const DiagramFlow = () => {
     try {
       const response = await diagramsAiService.chat({
         message,
+        mode: /^(?:\s*[¿?]?\s*)(?:qué|que es|cómo|como|cuál|cuáles|por qué|what|how|why)\b/i.test(message) && !/\b(?:crear|crea|editar|edita|modificar|modifica|create|edit|modify)\b/i.test(message) ? 'ask' : 'agent',
         diagramId,
         diagramData: toContent(nodesRef.current, edgesRef.current),
         conversationHistory: buildConversationHistory(chatMessages),

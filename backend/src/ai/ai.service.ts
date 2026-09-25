@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +9,7 @@ import { AIInteractionEntity } from './entities/ai-interaction.entity';
 import { AIInteractionType } from './enums/ai-interaction-type.enum';
 import { ChatAiAttachmentDto, ChatAiDto, ChatAiMode } from './dto/chat-ai.dto';
 import { containsDiagramCommand, parseDiagramCommands } from './diagram-command-parser';
+import { parseAttribute, validUmlType } from '../code-generation/uml-analysis';
 
 type OpenAIInputPart = { type: 'input_text'; text: string } | { type: 'input_image'; image_url: string } | { type: 'input_file'; filename: string; file_data: string };
 
@@ -26,6 +27,7 @@ type AgentResponse = {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private readonly systemPrompts = {
     ask: `Eres un experto en UML y diseño de software. Tu trabajo es ayudar a los usuarios a entender y mejorar sus diagramas UML de clases.
 
@@ -37,12 +39,12 @@ Puedes:
 - Validar buenas prácticas
 
 Responde siempre en español, de manera clara y educativa. Si no tienes información sobre el diagrama, pregunta por más detalles.`,
-    agent: `Interpret the user's requested diagram creation or edit using the attached image/document and current diagram. Return ONLY a JSON object: {"message":"brief result","actions":[{"type":"create_class","data":{"id":"unique-id","name":"User","attributes":[],"methods":[],"position":{"x":100,"y":100}}}]}. Actions must be nonempty and directly executable. Supported types: create_class, create_interface, create_abstract_class, create_enum, create_relationship, modify_element, delete_element. Create nodes with unique ids and names; create_enum also needs literals (strings). For create_relationship use data {"id":"unique-id","type":"association|dependency|inheritance|implementation|composition|aggregation","sourceId":"existing-or-new-node-id","targetId":"existing-or-new-node-id","sourceMultiplicity":"1","targetMultiplicity":"*"}. For modify_element use data {"targetId":"existing-node-id","name":"NewName"} or attributes/methods/literals/position/addAttributes/removeAttributes. For delete_element use data {"targetId":"existing-node-or-edge-id"}. Use exact existing IDs from the diagram; new relationship endpoints must reference existing or created node IDs. Do not use names as references. Only emit fields supported by these actions; no explanatory prose or markdown outside JSON. If the attachment does not contain enough information, return {"message":"Cannot determine diagram changes","actions":[]}.`,
+    agent: `Interpret the user's requested diagram creation or edit using the attached image/document and current diagram. Return ONLY a JSON object: {"message":"brief result","actions":[{"type":"create_class","data":{"id":"unique-id","name":"User","attributes":[],"methods":[],"position":{"x":100,"y":100}}}]}. Actions must be nonempty and directly executable. Supported types: create_class, create_interface, create_abstract_class, create_enum, create_relationship, modify_element, delete_element. Create nodes with unique ids and names; create_enum also needs literals (strings). Attributes must be UML name: type strings using String, UUID, int, boolean, date, datetime, existing class names, or List/Set/Map of these; never SQL types or PK/FK annotations. For create_relationship use data {"id":"unique-id","type":"association|dependency|inheritance|implementation|composition|aggregation","sourceId":"existing-or-new-node-id","targetId":"existing-or-new-node-id","sourceMultiplicity":"1","targetMultiplicity":"*"}. For modify_element use data {"targetId":"existing-node-id","name":"NewName"} or attributes/methods/literals/position/addAttributes/removeAttributes. For delete_element use data {"targetId":"existing-node-or-edge-id"}. Use exact existing IDs from the diagram; new relationship endpoints must reference existing or created node IDs. Do not use names as references. Only emit fields supported by these actions; no explanatory prose or markdown outside JSON. If the attachment does not contain enough information, return {"message":"Cannot determine diagram changes","actions":[]}.`,
   };
 
   private initialized = false;
   private apiKey?: string;
-  private model = 'gpt-4.1';
+  private model = 'gpt-5.5';
 
   constructor(
     @InjectRepository(AIInteractionEntity)
@@ -54,7 +56,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     if (this.initialized) return;
 
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY')?.trim() || undefined;
-    this.model = this.configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-4.1';
+    this.model = this.configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.5';
     this.initialized = true;
   }
 
@@ -312,22 +314,44 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     return content;
   }
 
-  async callOpenAI(systemPrompt: string, userParts: OpenAIInputPart[]) {
+  async callOpenAI(systemPrompt: string, userParts: OpenAIInputPart[], mode: ChatAiMode = ChatAiMode.ASK) {
     this.initialize();
 
     if (!this.apiKey) {
       throw new ServiceUnavailableException('AI service not available. Please configure OPENAI_API_KEY.');
     }
 
-    const response = await axios.post(
+    let response;
+    try {
+      response = await axios.post(
       'https://api.openai.com/v1/responses',
       {
         model: this.model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: userParts }],
+        ...(mode === ChatAiMode.AGENT ? { text: { format: { type: 'json_object' } } } : {}),
       },
       { timeout: 60000, headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' } },
-    );
+      );
+    } catch (error) {
+      if (!axios.isAxiosError(error)) throw error;
+      const status = error.response?.status;
+      const upstreamCode = error.response?.data?.error?.code;
+      const safeCode = typeof upstreamCode === 'string' && /^(invalid_json|invalid_request_error|invalid_parameter|unsupported_parameter|model_not_found|invalid_api_key|insufficient_quota|rate_limit_exceeded)$/.test(upstreamCode)
+        ? upstreamCode : undefined;
+      const upstreamParam = error.response?.data?.error?.param;
+      const safeParam = typeof upstreamParam === 'string' && /^(model|text\.format|input|input\.[0-9]+\.content|instructions)$/.test(upstreamParam)
+        ? upstreamParam.replace(/^input\.[0-9]+\.content$/, 'input.*.content') : undefined;
+      this.logger.warn(`OpenAI request failed: status=${Number.isInteger(status) && status >= 100 && status <= 599 ? status : 'unknown'} code=${safeCode ?? 'unknown'} parameter=${safeParam ?? 'unknown'}`);
+      if (status === 401) throw new UnauthorizedException('AI provider authentication failed');
+      if (status === 403) throw new ForbiddenException('AI provider access denied');
+      if (status === 429) throw new HttpException('AI provider rate limit reached. Please retry later.', HttpStatus.TOO_MANY_REQUESTS);
+      if (status === 400 || status === 404 || status === 422) {
+        throw new HttpException({ message: 'AI provider rejected the request. Check the configured model and input format.', code: safeCode, parameter: safeParam }, status);
+      }
+      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') throw new HttpException('AI provider request timed out', HttpStatus.GATEWAY_TIMEOUT);
+      throw new ServiceUnavailableException('AI provider is unavailable. Please retry later.');
+    }
 
     if (response.data?.status && response.data.status !== 'completed') throw new ServiceUnavailableException('AI response was not completed');
     const output = response.data?.output;
@@ -368,8 +392,13 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const nodeIds = new Set(content.elements.map((item) => item.id));
     const edgeIds = new Set(content.connections.map((item) => item.id));
     const names = new Set(content.elements.map((item) => String(item.name).toLowerCase()));
+    const typeNames = new Set([...names, ...actions.filter((action) => action && typeof action === 'object' && ['create_class', 'create_interface', 'create_abstract_class', 'create_enum'].includes(action.type) && typeof action.data?.name === 'string').map((action) => action.data.name.toLowerCase())]);
     const string = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
     const strings = (value: unknown) => Array.isArray(value) && value.every(string);
+    const attributes = (value: unknown) => strings(value) && value.every((attribute: string) => {
+      const parsed = parseAttribute(attribute);
+      return parsed && !/[={}]/.test(attribute) && validUmlType(parsed.sourceType, typeNames);
+    });
     const position = (value: any) => value && Number.isFinite(value.x) && Number.isFinite(value.y);
     const allowed = (data: any, keys: string[]) => Object.keys(data).every((key) => keys.includes(key));
     const nodeActions = ['create_class', 'create_interface', 'create_abstract_class', 'create_enum'];
@@ -380,7 +409,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
       const { type, data } = action;
       if (nodeActions.includes(type)) {
         if (!allowed(data, ['id', 'name', 'attributes', 'methods', 'literals', 'position']) || !string(data.name) ||
-          (data.attributes !== undefined && !strings(data.attributes)) || (data.methods !== undefined && !strings(data.methods)) ||
+          (data.attributes !== undefined && !attributes(data.attributes)) || (data.methods !== undefined && !strings(data.methods)) ||
           (data.literals !== undefined && !strings(data.literals)) || (type === 'create_enum' && !strings(data.literals)) || (data.position !== undefined && !position(data.position))) return null;
         const id = data.id ?? randomUUID();
         if (!string(id) || nodeIds.has(id) || names.has(data.name.toLowerCase())) return null;
@@ -402,6 +431,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           (data.name !== undefined && !string(data.name)) ||
           [data.attributes, data.addAttributes, data.removeAttributes].filter((value) => value !== undefined).length > 1 ||
           ['attributes', 'methods', 'literals', 'addAttributes', 'removeAttributes'].some((key) => data[key] !== undefined && !strings(data[key])) ||
+          ['attributes', 'addAttributes'].some((key) => data[key] !== undefined && !attributes(data[key])) ||
           (data.position !== undefined && !position(data.position))) return null;
         valid.push(action);
       } else if (type === 'delete_element') {
@@ -455,7 +485,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const userParts = this.buildUserParts(payload, context);
 
     try {
-      const aiResponse = await this.callOpenAI(systemPrompt, userParts);
+      const aiResponse = await this.callOpenAI(systemPrompt, userParts, mode);
       const processedResponse = mode === ChatAiMode.AGENT
         ? this.processAgentResponse(aiResponse, payload.diagramData)
         : { message: aiResponse, mode: ChatAiMode.ASK, success: true };
@@ -464,21 +494,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
 
       return processedResponse;
     } catch (error: any) {
-      const status = error?.response?.status;
-
-      if (status === 401 || status === 403) {
-        throw new UnauthorizedException('Error de autorización con OpenAI');
-      }
-
-      if (status === 429) {
-        throw new BadRequestException('API quota exceeded. Please try again later.');
-      }
-
-      if (error instanceof ServiceUnavailableException) {
-        throw error;
-      }
-
-      if (error instanceof BadRequestException) throw error;
+      if (error instanceof HttpException) throw error;
 
       throw new ServiceUnavailableException('Internal server error processing AI request');
     }

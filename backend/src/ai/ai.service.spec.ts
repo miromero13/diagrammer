@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AiService } from './ai.service';
 import { AIInteractionType } from './enums/ai-interaction-type.enum';
 import { ChatAiMode } from './dto/chat-ai.dto';
+import { normalizeAndValidateUml } from '../code-generation/uml-analysis';
 
 jest.mock('axios');
 
@@ -47,11 +48,66 @@ describe('AiService', () => {
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://api.openai.com/v1/responses',
       expect.objectContaining({
-        model: 'gpt-4.1', instructions: 'system prompt',
+        model: 'gpt-5.5', instructions: 'system prompt',
         input: [{ role: 'user', content: [{ type: 'input_text', text: 'contexto' }, { type: 'input_image', image_url: 'data:image/png;base64,ZmFrZS1pbWFnZQ==' }, { type: 'input_file', filename: 'diagram.pdf', file_data: 'data:application/pdf;base64,YQ==' }] }],
       }),
       { timeout: 60000, headers: { Authorization: 'Bearer mock-key', 'Content-Type': 'application/json' } },
     );
+  });
+
+  it.each([
+    [400, 'model_not_found', 400],
+    [401, 'invalid_api_key', 401],
+    [403, 'invalid_api_key', 403],
+    [404, 'model_not_found', 404],
+    [429, 'rate_limit_exceeded', 429],
+    [422, 'invalid_parameter', 422],
+    [503, 'server_error', 503],
+  ])('maps upstream %i without leaking upstream content', async (upstreamStatus, code, expectedStatus) => {
+    const secret = 'secret-diagram-and-api-key';
+    const error = { isAxiosError: true, response: { status: upstreamStatus, data: { error: { code, message: secret, type: secret } } },
+      config: { headers: { Authorization: secret }, data: secret } };
+    mockedAxios.isAxiosError.mockReturnValue(true);
+    mockedAxios.post.mockRejectedValueOnce(error);
+    const log = jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    try {
+      await service.chat('owner', { message: 'Explain this', mode: ChatAiMode.ASK });
+      throw new Error('Expected an HTTP exception');
+    } catch (caught) {
+      expect((caught as any).getStatus()).toBe(expectedStatus);
+      expect(JSON.stringify((caught as any).getResponse())).not.toContain(secret);
+      expect(JSON.stringify((caught as any).getResponse())).not.toContain('server_error');
+      if ([400, 404, 422].includes(upstreamStatus)) expect((caught as any).getResponse().code).toBe(code);
+    }
+    expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+  });
+
+  it('maps a network timeout to 504 without leaking axios details', async () => {
+    mockedAxios.isAxiosError.mockReturnValue(true);
+    mockedAxios.post.mockRejectedValueOnce({ isAxiosError: true, code: 'ECONNABORTED', message: 'secret-diagram-and-api-key' });
+    jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    await expect(service.callOpenAI('prompt', [{ type: 'input_text', text: 'hello' }])).rejects.toMatchObject({ status: 504 });
+  });
+
+  it.each([
+    ['input.0.content', 'invalid_parameter', 'input.*.content', 'invalid_parameter'],
+    ['input.0.content.secret-diagram-and-api-key', 'untrusted-secret-diagram-and-api-key', undefined, undefined],
+    [null, null, undefined, undefined],
+  ])('sanitizes upstream 400 diagnostics for parameter %s', async (param, code, parameter, safeCode) => {
+    const secret = 'secret-diagram-and-api-key';
+    mockedAxios.isAxiosError.mockReturnValue(true);
+    mockedAxios.post.mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: { error: { param, code, message: secret, type: secret } } }, config: { headers: { Authorization: secret } } });
+    const log = jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    try {
+      await service.callOpenAI('prompt', [{ type: 'input_text', text: 'hello' }]);
+      throw new Error('Expected an HTTP exception');
+    } catch (caught) {
+      expect((caught as any).getStatus()).toBe(400);
+      expect((caught as any).getResponse()).toEqual({ message: 'AI provider rejected the request. Check the configured model and input format.', code: safeCode, parameter });
+      expect(JSON.stringify((caught as any).getResponse())).not.toContain(secret);
+    }
+    expect(log).toHaveBeenCalledWith(`OpenAI request failed: status=400 code=${safeCode ?? 'unknown'} parameter=${parameter ?? 'unknown'}`);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
   });
 
   it('rejects unsupported binaries and empty or incomplete responses', async () => {
@@ -102,8 +158,19 @@ describe('AiService', () => {
     const result = await service.chat('owner', { message: 'Crea una base de datos para un sistema pos' });
     expect(call).toHaveBeenCalledWith(expect.stringContaining('create_class'), expect.arrayContaining([
       expect.objectContaining({ type: 'input_text', text: expect.stringContaining('Crea una base de datos para un sistema pos') }),
-    ]));
+    ]), ChatAiMode.AGENT);
     expect(result).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [{ type: 'create_class', data: { name: 'Product' } }] });
+  });
+
+  it('requests structured JSON for explicit create/edit and rejects prose instead of saving it', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{"message":"Created","actions":[{"type":"create_class","data":{"id":"user","name":"User"}}]}' }] }] } } as any);
+    const created = await service.chat('owner', { mode: ChatAiMode.AGENT, message: 'Design a user model' });
+    expect(created).toMatchObject({ success: true, mode: ChatAiMode.AGENT, actions: [{ type: 'create_class' }] });
+    expect(mockedAxios.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ text: { format: { type: 'json_object' } } }), expect.any(Object));
+
+    mockedAxios.post.mockResolvedValueOnce({ data: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'Here is PlantUML: class User' }] }] } } as any);
+    expect(await service.chat('owner', { mode: ChatAiMode.AGENT, message: 'Design another model' })).toMatchObject({ success: false, actions: [] });
+    expect(interactionsRepository.save).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -156,13 +223,58 @@ describe('AiService', () => {
       { type: 'create_class', data: { id: 'user-1', name: 'User' } },
       { type: 'create_relationship', data: { sourceId: 'user-1', targetId: 'existing' } },
     ] });
-    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_relationship'), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]));
+    expect(call).toHaveBeenCalledWith(expect.stringContaining('create_relationship'), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]), ChatAiMode.AGENT);
+  });
+
+  it('accepts generator attributes from an image and preserves UUID primary keys', async () => {
+    jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created', actions: [
+      { type: 'create_class', data: { id: 'user', name: 'User', attributes: ['id: UUID', 'name: String', 'profile: String', 'createdAt: datetime', 'avatar: String', 'scores: List<int>'] } },
+      { type: 'modify_element', data: { targetId: 'user', addAttributes: ['updatedAt: datetime'] } },
+    ] }));
+    const result = await service.chat('owner', { message: 'Create from image', attachments: [{ mimeType: 'image/png', base64: 'YQ==' }] }) as any;
+    expect(result.success).toBe(true);
+    expect(result.actions[0].data.attributes).toEqual(['id: UUID', 'name: String', 'profile: String', 'createdAt: datetime', 'avatar: String', 'scores: List<int>']);
+    const attributes = [...result.actions[0].data.attributes, ...result.actions[1].data.addAttributes];
+    const analysis = normalizeAndValidateUml({ elements: [{ id: 'user', name: 'User', type: 'uml.Class', attributes }] });
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.relationalModel.tables[0].columns.find((column) => column.name === 'id')).toMatchObject({ primaryKey: true, javaType: 'UUID' });
+  });
+
+  it('keeps relationships without synthesizing FK attributes', async () => {
+    const actions = [
+      { type: 'create_class', data: { id: 'user', name: 'User', attributes: ['id: UUID'] } },
+      { type: 'create_class', data: { id: 'post', name: 'Post', attributes: [] } },
+      { type: 'create_relationship', data: { sourceId: 'post', targetId: 'user', sourceMultiplicity: '*', targetMultiplicity: '1' } },
+    ];
+    jest.spyOn(service, 'callOpenAI').mockResolvedValue(JSON.stringify({ message: 'Created', actions }));
+    const payload = { message: 'Create from text', sourceText: 'posts.user_id references users.id' };
+    const result = await service.chat('owner', payload) as any;
+    expect(result.success).toBe(true);
+    expect(result.actions[1].data.attributes).toEqual([]);
+    const analysis = normalizeAndValidateUml({ elements: result.actions.slice(0, 2).map((action: any) => ({ ...action.data, type: 'uml.Class' })), connections: [{ ...result.actions[2].data, type: 'association' }] });
+    expect(analysis.relationalModel.relationships[0].foreignKeys).toEqual([expect.objectContaining({ table: 'post', column: 'user_id', referencedTable: 'users' })]);
+  });
+
+  it('rejects SQL types, annotations, and unknown types atomically in create and modify arrays', async () => {
+    const payload = { message: 'Modify from image', attachments: [{ mimeType: 'image/png', base64: 'YQ==' }], diagramData: { elements: [{ id: 'post', name: 'Post', type: 'uml.Class' }] } };
+    for (const attribute of ['name: varchar(50)', 'profile: jsonb', 'createdAt: timestamp', 'avatar: bytea', 'id: UUID PK', 'user_id: uuid FK -> users.id', 'user_id: users.id', 'payload: xmlblob']) {
+      for (const data of [{ targetId: 'post', addAttributes: [attribute] }, { targetId: 'post', attributes: [attribute] }]) {
+        jest.spyOn(service, 'callOpenAI').mockResolvedValueOnce(JSON.stringify({ message: 'Updated', actions: [
+          { type: 'create_class', data: { id: 'other', name: 'Other' } }, { type: 'modify_element', data },
+        ] }));
+        expect(await service.chat('owner', payload)).toMatchObject({ success: false, actions: [] });
+      }
+      jest.spyOn(service, 'callOpenAI').mockResolvedValueOnce(JSON.stringify({ message: 'Created', actions: [
+        { type: 'create_class', data: { id: 'new', name: 'New', attributes: [attribute] } },
+      ] }));
+      expect(await service.chat('owner', payload)).toMatchObject({ success: false, actions: [] });
+    }
   });
 
   it('keeps questions with attachments in ASK mode', async () => {
     const call = jest.spyOn(service, 'callOpenAI').mockResolvedValue('An interface is a contract.');
     expect(await service.chat('owner', { message: 'What is this image?', attachments: [{ kind: 'image', mimeType: 'image/png', base64: 'YQ==' }] })).toMatchObject({ mode: ChatAiMode.ASK, message: 'An interface is a contract.' });
-    expect(call).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]));
+    expect(call).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]), ChatAiMode.ASK);
   });
 
   it.each([

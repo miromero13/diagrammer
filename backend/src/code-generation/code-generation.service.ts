@@ -19,6 +19,7 @@ import { generatePersistence } from './persistence-generator';
 import { generateDtos } from './dto-generator';
 import { generateServices } from './service-generator';
 import { generateControllers } from './controller-generator';
+import { generatePostmanCollection } from './postman-collection-generator';
 import { featurePackageName } from './feature-name';
 import { adaptTemplateSource, relocateTemplateFeaturePath } from './template-adaptation';
 
@@ -148,6 +149,7 @@ export class CodeGenerationService implements OnModuleInit {
           const controllerFiles = generateControllers(analysis, basePackage, security);
           await Promise.all(controllerFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
           await this.updateStep(id, 'GENERATING_CONTROLLERS', 'COMPLETED', 'Controladores y documentación OpenAPI generados');
+          await fs.writeFile(join(projectRoot, 'postman-collection.json'), `${JSON.stringify(generatePostmanCollection(analysis, security, backendName), null, 2)}\n`);
           await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
           // Equivalent to `chmod +x gradlew` before compilation.
           await fs.chmod(join(projectRoot, 'gradlew'), 0o755);

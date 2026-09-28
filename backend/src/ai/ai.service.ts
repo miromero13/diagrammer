@@ -275,13 +275,25 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
       if (elementIndex >= 0) {
         const current = content.elements[elementIndex];
         const currentAttributes = Array.isArray(current.attributes) ? current.attributes : [];
+        const removeAttributes = Array.isArray(data.removeAttributes) ? data.removeAttributes : [];
+        const keptAttributeIndices = currentAttributes
+          .map((attribute: string, index: number) => ({ attribute, index, parsed: parseAttribute(attribute) }))
+          .filter(({ attribute, parsed }) => !removeAttributes.some((removal: string) =>
+            removal === attribute || (/^[A-Za-z_$][\w$]*$/.test(removal.trim()) && parsed?.name.toLowerCase() === removal.trim().toLowerCase()),
+          ));
+        const keptAttributes = keptAttributeIndices.map(({ attribute }) => attribute);
+        const addedAttributes = Array.isArray(data.addAttributes)
+          ? data.addAttributes.filter((attribute: string) => !keptAttributes.some((existing) => existing.trim().toLowerCase() === attribute.trim().toLowerCase()))
+          : [];
         const nextAttributes = Array.isArray(data.attributes)
           ? data.attributes
-          : Array.isArray(data.addAttributes)
-            ? [...currentAttributes, ...data.addAttributes]
-            : Array.isArray(data.removeAttributes)
-              ? currentAttributes.filter((attribute: string) => !data.removeAttributes.includes(attribute))
-              : currentAttributes;
+          : [...keptAttributes, ...addedAttributes];
+        const nextAttributeSemantics = Array.isArray(current.attributeSemantics)
+          ? [
+              ...keptAttributeIndices.map(({ index }) => current.attributeSemantics[index]),
+              ...addedAttributes.map(() => ({})),
+            ]
+          : current.attributeSemantics;
 
         content.elements[elementIndex] = {
           ...current,
@@ -291,6 +303,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
            ...(Array.isArray(data.methods) ? { methods: data.methods } : {}),
            ...(Array.isArray(data.literals) ? { literals: data.literals } : {}),
           attributes: nextAttributes,
+          ...(nextAttributeSemantics ? { attributeSemantics: nextAttributeSemantics } : {}),
         };
         return;
       }
@@ -329,7 +342,14 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
       const upstreamParam = error.response?.data?.error?.param;
       const safeParam = typeof upstreamParam === 'string' && /^(model|text\.format|input|input\.[0-9]+\.content|instructions)$/.test(upstreamParam)
         ? upstreamParam.replace(/^input\.[0-9]+\.content$/, 'input.*.content') : undefined;
-      this.logger.warn(`OpenAI request failed: status=${Number.isInteger(status) && status >= 100 && status <= 599 ? status : 'unknown'} code=${safeCode ?? 'unknown'} parameter=${safeParam ?? 'unknown'}`);
+      const upstreamMessage = error.response?.data?.error?.message;
+      const safeMessage = typeof upstreamMessage === 'string'
+        ? upstreamMessage.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 500) || 'No upstream error message provided'
+        : 'No upstream error message provided';
+      const requestId = error.response?.headers?.['x-request-id'];
+      const safeRequestId = typeof requestId === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(requestId) ? requestId : 'unknown';
+      const safeModel = this.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 100);
+      this.logger.warn(`OpenAI request failed: status=${Number.isInteger(status) && status >= 100 && status <= 599 ? status : 'unknown'} model=${safeModel} mode=${mode} request_id=${safeRequestId} code=${safeCode ?? 'unknown'} parameter=${safeParam ?? 'unknown'} message=${safeMessage}`);
       if (status === 401) throw new UnauthorizedException('AI provider authentication failed');
       if (status === 403) throw new ForbiddenException('AI provider access denied');
       if (status === 429) throw new HttpException('AI provider rate limit reached. Please retry later.', HttpStatus.TOO_MANY_REQUESTS);
@@ -373,6 +393,10 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
       if (parsed?.intent !== 'edit' || typeof parsed?.message !== 'string' || !parsed.message.trim() || !actions) throw new Error('Invalid diagram response');
       return { success: true, message: parsed.message, actions, mode: ChatAiMode.AGENT };
     } catch {
+      const maxLoggedResponseLength = 6000;
+      const loggedResponse = aiResponse.slice(0, maxLoggedResponseLength);
+      const truncated = aiResponse.length > maxLoggedResponseLength;
+      this.logger.warn(`Rejected OpenAI diagram response (length=${aiResponse.length}, truncated=${truncated}): ${loggedResponse}${truncated ? '…[truncated]' : ''}`);
       return { success: false, message: 'Could not apply diagram changes. Please clarify your request.', actions: [], mode: ChatAiMode.AGENT };
     }
   }
@@ -420,7 +444,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
         if (!allowed(data, ['targetId', 'name', 'attributes', 'methods', 'literals', 'position', 'addAttributes', 'removeAttributes']) ||
           !string(data.targetId) || !nodeIds.has(data.targetId) || Object.keys(data).length < 2 ||
           (data.name !== undefined && !string(data.name)) ||
-          [data.attributes, data.addAttributes, data.removeAttributes].filter((value) => value !== undefined).length > 1 ||
+          (data.attributes !== undefined && (data.addAttributes !== undefined || data.removeAttributes !== undefined)) ||
           ['attributes', 'methods', 'literals', 'addAttributes', 'removeAttributes'].some((key) => data[key] !== undefined && !strings(data[key])) ||
           ['attributes', 'addAttributes'].some((key) => data[key] !== undefined && !attributes(data[key])) ||
           (data.position !== undefined && !position(data.position))) return null;
@@ -469,6 +493,8 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
      const diagram = await this.diagramsService.getDiagram(userId, payload.diagramId);
      const context = this.buildContext(diagram.content, payload.conversationHistory || [], payload.sourceText || null, payload.attachments || []);
      const userParts = this.buildUserParts(payload, context);
+     const userText = userParts[0];
+     if (userText.type === 'input_text') userText.text += '\n\nReturn your response as JSON.';
 
      try {
        const aiResponse = await this.callOpenAI(this.systemPrompts.agent, userParts, ChatAiMode.AGENT);

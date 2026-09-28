@@ -36,7 +36,7 @@ export class AIInteractionEntity {
   @Column({ type: 'text' })
   response: string;
 
-  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  @Column({ type: 'jsonb', default: {} })
   context: Record<string, unknown>;
 
   @Column({ type: 'float', name: 'confidence_score', nullable: true })

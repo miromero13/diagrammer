@@ -35,7 +35,7 @@ export class ProjectMemberEntity {
   @Column({ type: 'enum', enum: ProjectMemberRole, default: ProjectMemberRole.VIEWER })
   role: ProjectMemberRole;
 
-  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  @Column({ type: 'jsonb', default: {} })
   permissions: Record<string, unknown>;
 
   @Column({ type: 'uuid', name: 'invited_by', nullable: true })

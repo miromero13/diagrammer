@@ -49,16 +49,25 @@ describe('fresh production schema migration', () => {
           .map((column) => [`${metadata.tableName}.${column.databaseName}`, column.default]),
       ),
     );
-    expect(jsonbDefaults).toEqual(new Map([
-      ['diagrams.content', { elements: [], connections: [], metadata: {} }],
-      ['project_members.permissions', {}],
-      ['projects.settings', {}],
-      ['ai_interactions.context', {}],
-      ['generated_code.authentication', {}],
-      ['generated_code.steps', []],
-    ]));
-    for (const value of jsonbDefaults.values()) {
-      expect(typeof value === 'object' && value !== null).toBe(true);
+    const expectedJsonbDefaults = new Map([
+      ['diagrams.content', `'{"elements":[],"connections":[],"metadata":{}}'::jsonb`],
+      ['project_members.permissions', "'{}'::jsonb"],
+      ['projects.settings', "'{}'::jsonb"],
+      ['ai_interactions.context', "'{}'::jsonb"],
+      ['generated_code.authentication', "'{}'::jsonb"],
+      ['generated_code.steps', "'[]'::jsonb"],
+    ]);
+    expect(jsonbDefaults.size).toBe(expectedJsonbDefaults.size);
+    for (const [key, expectedExpression] of expectedJsonbDefaults) {
+      const metadataDefault = jsonbDefaults.get(key);
+      expect(typeof metadataDefault).toBe('function');
+      expect((metadataDefault as () => string)()).toBe(expectedExpression);
+      const [tableName, columnName] = key.split('.');
+      const tablePattern = new RegExp(`CREATE TABLE "${tableName}" \\(([\\s\\S]*?)\\n    \\)`);
+      const table = sql.match(tablePattern)?.[1];
+      const columnPattern = new RegExp(`"${columnName}"\\s+([^\\n]+)`);
+      const definition = table?.match(columnPattern)?.[1];
+      expect(definition).toContain(`DEFAULT ${expectedExpression}`);
     }
     expect(statements.filter((statement) => /^CREATE (UNIQUE )?INDEX /.test(statement))).toHaveLength(
       dataSource.entityMetadatas.reduce((count, metadata) => count + metadata.indices.length, 0),

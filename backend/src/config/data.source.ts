@@ -6,7 +6,7 @@ ConfigModule.forRoot({ envFilePath: '.env' });
 const configService = new ConfigService();
 
 const isProd = configService.get('APP_PROD') === 'true';
-const shouldSynchronize = configService.get('TYPEORM_SYNC') === 'true';
+// const shouldSynchronize = configService.get('TYPEORM_SYNC') === 'true';
 const dbUrl = configService.get('DB_URL') as string | undefined;
 const dbHost = String(configService.get('DB_HOST') || 'localhost');
 const dbPort = Number(configService.get('DB_PORT') || 5432);
@@ -27,12 +27,12 @@ export const DataSourceConfig: DataSourceOptions = {
       }),
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../migrations/*{.ts,.js}'],
-  migrationsRun: true,
-  synchronize: shouldSynchronize,
+    migrationsRun: false,
+  synchronize: false,
   namingStrategy: new SnakeNamingStrategy(),
   logging: false,
   extra: {
-    ssl: isProd ? { rejectUnauthorized: false } : false,
+    ssl: isProd ? { rejectUnauthorized: false } : null,
   },
 };
 

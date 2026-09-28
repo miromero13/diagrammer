@@ -28,7 +28,14 @@
     "db:delete": "npm run db:drop && npm run db:sync",
     "db:drop:test": "typeorm-ts-node-esm schema:drop -d ./test/config/data.source.ts",
     "db:sync:test": "typeorm-ts-node-esm schema:sync -d ./test/config/data.source.ts",
-    "db:delete:test": "npm run db:drop:test && npm run db:sync:test"
+    "db:delete:test": "npm run db:drop:test && npm run db:sync:test",
+    "migration:run:compiled": "node dist/scripts/run-migrations.js",
+    "typeorm": "node -r ts-node/register -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d ./src/config/data.source.ts",
+    "migration:generate": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate src/migrations/Migration -d src/config/data.source.ts",
+    "migration:gen": "npm run build && npm run typeorm -- migration:generate",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

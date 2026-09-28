@@ -17,6 +17,7 @@ type DiagramChatMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  attemptState?: 'sending' | 'failed'
 }
 
 interface DiagramChatSidebarProps {
@@ -36,6 +37,7 @@ interface DiagramChatSidebarProps {
   onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
   onToggleVoiceRecording: () => void
   onSend: () => void
+  onRetry: (messageId: string) => void
 }
 
 export const DiagramChatSidebar = ({
@@ -55,6 +57,7 @@ export const DiagramChatSidebar = ({
   onInputKeyDown,
   onToggleVoiceRecording,
   onSend,
+  onRetry,
 }: DiagramChatSidebarProps) => {
   return (
     <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border bg-background">
@@ -82,7 +85,7 @@ export const DiagramChatSidebar = ({
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'border bg-background text-foreground'}`}
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${message.attemptState === 'failed' ? 'border border-destructive bg-destructive/10 text-destructive' : message.role === 'user' ? 'bg-primary text-primary-foreground' : 'border bg-background text-foreground'}`}
                   >
                     <div className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
                       {message.role === 'user' ? 'Tú' : 'IA'}
@@ -90,6 +93,12 @@ export const DiagramChatSidebar = ({
                     <div className="whitespace-pre-wrap break-words">
                       {message.content}
                     </div>
+                    {message.attemptState === 'sending' ? <div role="status" className="mt-1 text-xs">Enviando…</div> : null}
+                    {message.attemptState === 'failed' ? (
+                      <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => onRetry(message.id)} aria-label={`Reintentar envío: ${message.content}`}>
+                        Reintentar
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))

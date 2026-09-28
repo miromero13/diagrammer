@@ -316,6 +316,35 @@ export const mergeDiagramContent = (base: DiagramContent, local: DiagramContent,
 
 export const isSaveResponseCurrent = (requestRevision: number, currentRevision: number) => requestRevision === currentRevision
 
+export const buildVoiceMessage = (seed: string, finalTranscript: string, interimTranscript: string) =>
+  [seed, finalTranscript, interimTranscript].filter(Boolean).join(' ').trim()
+
+export const buildDiagramConversationHistory = (messages: Array<DiagramChatMessage & { attemptState?: string }>): DiagramChatConversationTurn[] => {
+  const turns: DiagramChatConversationTurn[] = []
+  let currentTurn: DiagramChatConversationTurn | null = null
+
+  messages.filter((message) => !message.attemptState).forEach((message) => {
+    if (message.role === 'user') {
+      if (currentTurn) turns.push(currentTurn)
+      currentTurn = { user: message.content, ai: '' }
+      return
+    }
+
+    if (!currentTurn) {
+      currentTurn = { user: '', ai: message.content }
+      turns.push(currentTurn)
+      currentTurn = null
+      return
+    }
+
+    currentTurn.ai = message.content
+    turns.push(currentTurn)
+    currentTurn = null
+  })
+
+  return turns.filter((turn) => turn.user || turn.ai)
+}
+
 const kindToType = (kind: UmlKind) => (kind === 'interface' ? 'uml.Interface' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class')
 
 const typeToKind = (type?: string, name?: string, isAbstract?: boolean): UmlKind => {
@@ -549,6 +578,7 @@ const DiagramFlow = () => {
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   const skipSaveRef = useRef(false)
   const chatSendingRef = useRef(false)
+  const chatAttemptsRef = useRef(new Map<string, { message: string; attachments: ChatAttachment[] }>())
   const loadingRef = useRef(true)
   const nodeSyncThrottleRef = useRef<number | null>(null)
   const nodesRef = useRef(nodes)
@@ -559,7 +589,7 @@ const DiagramFlow = () => {
   const voiceFinalRef = useRef('')
   const voiceInterimRef = useRef('')
   const chatInputRef = useRef('')
-  const sendChatMessageRef = useRef<(() => void) | null>(null)
+  const sendChatMessageRef = useRef<((capturedMessage?: string) => void) | null>(null)
   const pendingSendAfterVoiceStopRef = useRef(false)
   const exportTargetRef = useRef<HTMLDivElement>(null)
   const chatScrollEndRef = useRef<HTMLDivElement | null>(null)
@@ -750,10 +780,7 @@ const DiagramFlow = () => {
 
     recognition.onend = () => {
       setIsRecordingVoice(false)
-      const combinedTranscript = [voiceSeedRef.current, voiceFinalRef.current, voiceInterimRef.current]
-        .filter(Boolean)
-        .join(' ')
-        .trim()
+      const combinedTranscript = buildVoiceMessage(voiceSeedRef.current, voiceFinalRef.current, voiceInterimRef.current)
 
       if (combinedTranscript) {
         setChatInput(combinedTranscript)
@@ -767,7 +794,7 @@ const DiagramFlow = () => {
       if (pendingSendAfterVoiceStopRef.current) {
         pendingSendAfterVoiceStopRef.current = false
         window.setTimeout(() => {
-          sendChatMessageRef.current?.()
+          sendChatMessageRef.current?.(combinedTranscript)
         }, 0)
       }
     }
@@ -1156,32 +1183,6 @@ const DiagramFlow = () => {
     setSelectedEdgeId(edgeId)
     setSelectedNodeId(null)
   }, [openEdgeEditor, openNodeEditor, pushHistory, setEdges, setNodes, themeMode])
-
-  const buildConversationHistory = useCallback((messages: DiagramChatMessage[]): DiagramChatConversationTurn[] => {
-    const turns: DiagramChatConversationTurn[] = []
-    let currentTurn: DiagramChatConversationTurn | null = null
-
-    messages.forEach((message) => {
-      if (message.role === 'user') {
-        if (currentTurn) turns.push(currentTurn)
-        currentTurn = { user: message.content, ai: '' }
-        return
-      }
-
-      if (!currentTurn) {
-        currentTurn = { user: '', ai: message.content }
-        turns.push(currentTurn)
-        currentTurn = null
-        return
-      }
-
-      currentTurn.ai = message.content
-      turns.push(currentTurn)
-      currentTurn = null
-    })
-
-    return turns.filter((turn) => turn.user || turn.ai)
-  }, [])
 
   const handleChatFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -1636,19 +1637,31 @@ const DiagramFlow = () => {
      savedContentRef.current = response.content
   }, [diagramId, pushHistory, setDiagram, setEdges, setNodes])
 
-  const sendChatMessage = useCallback(async () => {
-    const message = chatInputRef.current.trim()
-    if (!diagramId || chatSending) return
+  const sendChatMessage = useCallback(async (retryId?: string, capturedMessage?: string) => {
+    const retry = retryId ? chatAttemptsRef.current.get(retryId) : undefined
+    const message = capturedMessage?.trim() ?? retry?.message ?? chatInputRef.current.trim()
+    const attachments = retry?.attachments ?? chatAttachments
+    if (!diagramId || chatSendingRef.current || retryId && !retry) return
 
-    if (isRecordingVoice) {
+    if (isRecordingVoice && capturedMessage === undefined) {
       pendingSendAfterVoiceStopRef.current = true
       voiceRecognitionRef.current?.stop()
       setIsRecordingVoice(false)
       return
     }
 
-    if (!message && chatAttachments.length === 0) return
+    if (!message && attachments.length === 0) return
 
+    const messageId = retryId ?? createId()
+    if (!retryId) {
+      chatAttemptsRef.current.set(messageId, { message, attachments: [...attachments] })
+      setChatMessages((current) => current.concat({ id: messageId, role: 'user', content: message, attemptState: 'sending' } as unknown as DiagramChatMessage))
+      setChatInput('')
+      chatInputRef.current = ''
+      clearChatAttachments()
+    } else {
+      setChatMessages((current) => current.map((item) => item.id === messageId ? { ...item, attemptState: 'sending' } as DiagramChatMessage : item))
+    }
     setChatSending(true)
     chatSendingRef.current = true
     setChatError(null)
@@ -1666,8 +1679,8 @@ const DiagramFlow = () => {
       const response = await diagramsAiService.chat({
         message,
         diagramId,
-        conversationHistory: buildConversationHistory(chatMessages),
-        attachments: chatAttachments,
+        conversationHistory: buildDiagramConversationHistory(chatMessages),
+        attachments,
       })
 
       if (!response.success) throw new Error(response.message || 'Could not apply diagram changes')
@@ -1682,30 +1695,27 @@ const DiagramFlow = () => {
         setDiagram((current) => current ? { ...current, content: response.content! } : current)
       }
 
-      setChatInput('')
-      chatInputRef.current = ''
-      clearChatAttachments()
-
       try {
         const refreshed = await diagramsAiService.getDiagramMessages(diagramId)
         setChatMessages(refreshed.messages || [])
       } catch {
-        setChatMessages((current) => current.concat(
-          { id: createId(), role: 'user', content: message } as DiagramChatMessage,
+        setChatMessages((current) => current.map((item) => item.id === messageId ? { ...item, attemptState: undefined } as DiagramChatMessage : item).concat(
           { id: createId(), role: 'assistant', content: response.message } as DiagramChatMessage,
         ))
       }
+      chatAttemptsRef.current.delete(messageId)
     } catch (err) {
+      setChatMessages((current) => current.map((item) => item.id === messageId ? { ...item, attemptState: 'failed' } as DiagramChatMessage : item))
       setChatError(err instanceof Error ? err.message : 'No se pudo enviar el mensaje')
     } finally {
       chatSendingRef.current = false
       setChatSending(false)
     }
-  }, [buildConversationHistory, chatAttachments, chatSending, clearChatAttachments, diagramId, isRecordingVoice, chatMessages, setNodes, setEdges])
+  }, [chatAttachments, clearChatAttachments, diagramId, isRecordingVoice, chatMessages, setNodes, setEdges])
 
   useEffect(() => {
-    sendChatMessageRef.current = () => {
-      void sendChatMessage()
+    sendChatMessageRef.current = (capturedMessage) => {
+      void sendChatMessage(undefined, capturedMessage)
     }
   }, [sendChatMessage])
 
@@ -1942,6 +1952,9 @@ const DiagramFlow = () => {
                   }}
                   onSend={() => {
                     void sendChatMessage()
+                  }}
+                  onRetry={(messageId) => {
+                    void sendChatMessage(messageId)
                   }}
                 />
               )

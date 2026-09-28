@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
-import { equivalentDiagramContent, isSaveResponseCurrent, mergeDiagramContent } from './index'
+import { buildDiagramConversationHistory, buildVoiceMessage, equivalentDiagramContent, isSaveResponseCurrent, mergeDiagramContent } from './index'
+
+describe('buildVoiceMessage', () => {
+  it('captures the voice seed with final and interim transcript for deferred send', () => {
+    expect(buildVoiceMessage('Explain', 'the relation', 'between these classes')).toBe('Explain the relation between these classes')
+  })
+})
+
+describe('buildDiagramConversationHistory', () => {
+  it('excludes failed and pending optimistic attempts from confirmed conversation history', () => {
+    const history = buildDiagramConversationHistory([
+      { id: 'confirmed-user', role: 'user', content: 'first', attemptState: undefined },
+      { id: 'confirmed-ai', role: 'assistant', content: 'done', attemptState: undefined },
+      { id: 'failed', role: 'user', content: 'retry me', attemptState: 'failed' },
+      { id: 'sending', role: 'user', content: 'not yet', attemptState: 'sending' },
+    ] as any)
+
+    expect(history).toEqual([{ user: 'first', ai: 'done' }])
+  })
+})
 
 describe('equivalentDiagramContent', () => {
   it('treats object key order and normalized many-to-many content as equivalent', () => {

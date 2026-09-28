@@ -33,6 +33,15 @@ describe('AI editing of an open diagram', () => {
     expect(service.callOpenAI).toHaveBeenCalledWith(expect.stringContaining('An image alone'), expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]), ChatAiMode.AGENT);
   });
 
+  it('includes a JSON instruction in AGENT user input while preserving the request', async () => {
+    respond({ intent: 'ask', message: 'I can help.', actions: [] });
+    await service.chat('owner', { message: 'Explain this diagram', diagramId: 'current' });
+    const [, input, mode] = (service.callOpenAI as jest.Mock).mock.calls[0];
+    expect(mode).toBe(ChatAiMode.AGENT);
+    expect(input[0].text).toContain('JSON');
+    expect(input[0].text).toContain('User: Explain this diagram');
+  });
+
   it('edits existing content from free-form text without losing literals or connections', async () => {
     respond({ intent: 'edit', message: 'Updated.', actions: [
       { type: 'create_enum', data: { id: 'status', name: 'Status', literals: ['OPEN'] } },
@@ -43,11 +52,116 @@ describe('AI editing of an open diagram', () => {
     expect(result).toMatchObject({ success: true, content: { elements: [{ attributes: ['status: Status'] }, { type: 'uml.Enumeration', literals: ['OPEN'] }], connections: [{ id: 'edge' }] } });
   });
 
+  it('modifies an existing relationship by id without duplicating it and includes relation details in context', async () => {
+    const current = {
+      elements: [{ id: 'cliente', name: 'Cliente', type: 'uml.Class' }, { id: 'venta', name: 'Venta', type: 'uml.Class' }],
+      connections: [{ id: 'rel_cliente_venta', type: 'association', sourceId: 'cliente', targetId: 'venta', source: 'cliente', target: 'venta', sourceMultiplicity: '1', targetMultiplicity: '*' }],
+      metadata: { version: 'reactflow' },
+    };
+    diagrams.getDiagram.mockResolvedValueOnce({ id: 'current', content: current });
+    respond({ intent: 'edit', message: 'Updated multiplicity.', actions: [{ type: 'modify_relationship', data: { targetId: 'rel_cliente_venta', targetMultiplicity: '0..*' } }] });
+
+    const result = await service.chat('owner', { message: 'Update Cliente to Venta', diagramId: 'current' });
+
+    expect((result as any).content.connections).toEqual([{ ...current.connections[0], targetMultiplicity: '0..*' }]);
+    const [, input] = (service.callOpenAI as jest.Mock).mock.calls[0];
+    expect(input[0].text).toContain('id: rel_cliente_venta');
+    expect(input[0].text).toContain('sourceMultiplicity: 1, targetMultiplicity: *');
+  });
+
+  it('logs accepted generated output with a bounded response and excludes prompts and credentials', async () => {
+    config.get.mockImplementation((key?: string) => key === 'OPENAI_API_KEY' ? 'secret-api-key' : 'gpt-test');
+    const logger = jest.spyOn((service as any).logger, 'log').mockImplementation();
+    const response = `${JSON.stringify({ intent: 'ask', message: 'Looks good.', actions: [] })}${' '.repeat(6000)}UNLOGGED-TAIL`;
+    respond(response);
+
+    await service.chat('owner', { message: 'private user prompt', diagramId: 'current' });
+
+    expect(logger).toHaveBeenCalledTimes(1);
+    const logged = logger.mock.calls[0][0] as string;
+    expect(logged).toContain(`length=${response.length}, truncated=true`);
+    expect(logged).toContain(response.slice(0, 6000));
+    expect(logged).toContain('[truncated]');
+    expect(logged).not.toContain('UNLOGGED-TAIL');
+    expect(logged).not.toContain('private user prompt');
+    expect(logged).not.toContain('secret-api-key');
+  });
+
+  it('replaces an attribute by removing first and preserves other attribute semantics', async () => {
+    const current = {
+      elements: [{ id: 'sale', name: 'DetalleVenta', type: 'uml.Class', attributes: ['cantidades: int', 'precio: decimal'], attributeSemantics: [{ role: 'old' }, { role: 'price' }] }],
+      connections: [],
+      metadata: { version: 'reactflow' },
+    };
+    diagrams.getDiagram.mockResolvedValueOnce({ id: 'current', content: current });
+    respond({ intent: 'edit', message: 'Updated quantity.', actions: [{ type: 'modify_element', data: { targetId: 'sale', removeAttributes: ['cantidades'], addAttributes: ['cantidad: int'] } }] });
+
+    const result = await service.chat('owner', { message: 'Rename quantity', diagramId: 'current' });
+
+    expect((result as any).content.elements[0]).toMatchObject({
+      attributes: ['precio: decimal', 'cantidad: int'],
+      attributeSemantics: [{ role: 'price' }, {}],
+    });
+  });
+
+  it('does not duplicate an attribute when adding an equivalent field', async () => {
+    const current = {
+      elements: [{ id: 'sale', name: 'DetalleVenta', type: 'uml.Class', attributes: ['cantidad: int'], attributeSemantics: [{ role: 'quantity' }] }],
+      connections: [],
+      metadata: { version: 'reactflow' },
+    };
+    diagrams.getDiagram.mockResolvedValueOnce({ id: 'current', content: current });
+    respond({ intent: 'edit', message: 'Added quantity.', actions: [{ type: 'modify_element', data: { targetId: 'sale', addAttributes: [' CANTIDAD: INT '] } }] });
+
+    const result = await service.chat('owner', { message: 'Add quantity', diagramId: 'current' });
+
+    expect((result as any).content.elements[0]).toMatchObject({ attributes: ['cantidad: int'], attributeSemantics: [{ role: 'quantity' }] });
+  });
+
+  it('removes id attributes by name and preserves the matching attribute semantics across classes', async () => {
+    const classes = [
+      { id: 'one', name: 'One', type: 'uml.Class', attributes: ['id: UUID', 'name: String', 'active: boolean'], attributeSemantics: [{ role: 'identifier' }, { role: 'display' }, { role: 'state' }] },
+      { id: 'two', name: 'Two', type: 'uml.Class', attributes: ['code: String', 'id: UUID', 'count: int'], attributeSemantics: [{ role: 'code' }, { role: 'identifier' }, { role: 'count' }] },
+      { id: 'three', name: 'Three', type: 'uml.Class', attributes: ['createdAt: date', 'id: UUID'], attributeSemantics: [{ role: 'created' }, { role: 'identifier' }] },
+    ];
+    const current = { elements: classes, connections: [], metadata: { version: 'reactflow' } };
+    diagrams.getDiagram.mockResolvedValueOnce({ id: 'current', content: current });
+    respond({ intent: 'edit', message: 'Removed identifiers.', actions: classes.map(({ id }) => ({ type: 'modify_element', data: { targetId: id, removeAttributes: ['id'] } })) });
+
+    const result = await service.chat('owner', { message: 'Remove ids', diagramId: 'current' });
+
+    expect((result as any).content.elements.map(({ attributes, attributeSemantics }) => ({ attributes, attributeSemantics }))).toEqual([
+      { attributes: ['name: String', 'active: boolean'], attributeSemantics: [{ role: 'display' }, { role: 'state' }] },
+      { attributes: ['code: String', 'count: int'], attributeSemantics: [{ role: 'code' }, { role: 'count' }] },
+      { attributes: ['createdAt: date'], attributeSemantics: [{ role: 'created' }] },
+    ]);
+  });
+
   it('keeps a question with an image read-only and returns natural language', async () => {
     respond({ intent: 'ask', message: 'The drawing shows a class.', actions: [] });
     expect(await service.chat('viewer', { message: 'What is this?', diagramId: 'current', attachments: [image] }))
       .toMatchObject({ success: true, mode: ChatAiMode.ASK, message: 'The drawing shows a class.', actions: [] });
     expect(diagrams.compareAndSave).not.toHaveBeenCalled();
+  });
+
+  it('logs rejected model responses with a bounded length and does not warn for successful responses', async () => {
+    const warning = jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    const response = `not-json ${'x'.repeat(5991)}${'y'.repeat(1000)}`;
+    respond(response);
+
+    expect(await service.chat('owner', { message: 'Change this', diagramId: 'current' })).toMatchObject({ success: false });
+
+    expect(warning).toHaveBeenCalledTimes(1);
+    const logged = warning.mock.calls[0][0] as string;
+    expect(logged).toContain('length=7000, truncated=true');
+    expect(logged).toContain(response.slice(0, 6000));
+    expect(logged).toContain('[truncated]');
+    expect(logged).not.toContain(response.slice(6000));
+
+    warning.mockClear();
+    respond({ intent: 'ask', message: 'Looks good.', actions: [] });
+    expect(await service.chat('owner', { message: 'Explain this', diagramId: 'current' })).toMatchObject({ success: true });
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it('rejects invalid mixed action sets without partial persistence or raw JSON', async () => {
@@ -80,6 +194,23 @@ describe('AI editing of an open diagram', () => {
     (axios.post as jest.Mock).mockResolvedValue({ data: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{"intent":"ask","message":"Looks good","actions":[]}' }] }] } });
     await service.chat('owner', { message: 'Explain', diagramId: 'current', attachments: [image] });
     expect(axios.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ input: [{ role: 'user', content: expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }]) }] }), expect.any(Object));
+  });
+
+  it('logs sanitized provider rejection diagnostics without request secrets', async () => {
+    config.get.mockImplementation((key?: string) => key === 'OPENAI_API_KEY' ? 'secret-api-key' : 'gpt-test');
+    const warning = jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    const failure = { response: { status: 400, headers: { 'x-request-id': 'req-123' }, data: { error: { code: 'invalid_parameter', param: 'input', message: 'Invalid input\r\nplease fix' } } } };
+    jest.spyOn(axios, 'isAxiosError').mockReturnValue(true);
+    (axios.post as jest.Mock).mockRejectedValue(failure);
+    await expect(service.callOpenAI('private system instructions', [{ type: 'input_text', text: 'private prompt text' }], ChatAiMode.AGENT))
+      .rejects.toMatchObject({ response: { message: 'AI provider rejected the request. Check the configured model and input format.' } });
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('message=Invalid inputplease fix'));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('model=gpt-test mode=agent request_id=req-123'));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('code=invalid_parameter parameter=input'));
+    const logged = warning.mock.calls.flat().join(' ');
+    expect(logged).not.toContain('secret-api-key');
+    expect(logged).not.toContain('private prompt text');
+    expect(logged).not.toContain('private system instructions');
   });
 });
 

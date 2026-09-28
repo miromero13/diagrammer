@@ -30,9 +30,9 @@ RUN chmod 755 ./docker-entrypoint.sh \
 USER node
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://127.0.0.1:' + (process.env.PORT || '3000') + '/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+  CMD node -e "require('http').get('http://127.0.0.1:' + (process.env.PORT || '3010') + '/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
-EXPOSE 3000 8296
+EXPOSE 3010 8296
 
 ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]

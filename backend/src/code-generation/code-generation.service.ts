@@ -38,7 +38,6 @@ export const PHASE_STEPS = [
   { id: 'GENERATING_API', label: 'Generando DTOs y mapeos' },
   { id: 'GENERATING_SERVICES', label: 'Generando servicios' },
   { id: 'GENERATING_CONTROLLERS', label: 'Generando controladores y documentación OpenAPI' },
-  { id: 'COMPILING', label: 'Compilando con Gradle' },
   { id: 'PACKAGING_ZIP', label: 'Creando ZIP' },
 ];
 export const RESUMABLE_GENERATION_STATUSES = ['QUEUED', ...PHASE_STEPS.map(({ id }) => id)];
@@ -150,11 +149,6 @@ export class CodeGenerationService implements OnModuleInit {
           await Promise.all(controllerFiles.map((file) => fs.mkdir(join(projectRoot, dirname(file.path)), { recursive: true }).then(() => fs.writeFile(join(projectRoot, file.path), file.source))));
           await this.updateStep(id, 'GENERATING_CONTROLLERS', 'COMPLETED', 'Controladores y documentación OpenAPI generados');
           await fs.writeFile(join(projectRoot, 'postman-collection.json'), `${JSON.stringify(generatePostmanCollection(analysis, security, backendName), null, 2)}\n`);
-          await this.updateStep(id, 'COMPILING', 'IN_PROGRESS', 'Compilando con Gradle');
-          // Equivalent to `chmod +x gradlew` before compilation.
-          await fs.chmod(join(projectRoot, 'gradlew'), 0o755);
-      await exec('./gradlew', ['compileJava', '--no-daemon'], { cwd: projectRoot, timeout: 300000 });
-       await this.updateStep(id, 'COMPILING', 'COMPLETED', 'Plantilla compilada correctamente');
        await this.updateStep(id, 'PACKAGING_ZIP', 'IN_PROGRESS', 'Creando ZIP');
       const files = await this.readProjectFiles(projectRoot);
       const zipData = await this.createZip(backendName, files);

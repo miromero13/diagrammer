@@ -52,6 +52,41 @@ describe('AI editing of an open diagram', () => {
     expect(result).toMatchObject({ success: true, content: { elements: [{ attributes: ['status: Status'] }, { type: 'uml.Enumeration', literals: ['OPEN'] }], connections: [{ id: 'edge' }] } });
   });
 
+  it('modifies an existing relationship by id without duplicating it and includes relation details in context', async () => {
+    const current = {
+      elements: [{ id: 'cliente', name: 'Cliente', type: 'uml.Class' }, { id: 'venta', name: 'Venta', type: 'uml.Class' }],
+      connections: [{ id: 'rel_cliente_venta', type: 'association', sourceId: 'cliente', targetId: 'venta', source: 'cliente', target: 'venta', sourceMultiplicity: '1', targetMultiplicity: '*' }],
+      metadata: { version: 'reactflow' },
+    };
+    diagrams.getDiagram.mockResolvedValueOnce({ id: 'current', content: current });
+    respond({ intent: 'edit', message: 'Updated multiplicity.', actions: [{ type: 'modify_relationship', data: { targetId: 'rel_cliente_venta', targetMultiplicity: '0..*' } }] });
+
+    const result = await service.chat('owner', { message: 'Update Cliente to Venta', diagramId: 'current' });
+
+    expect((result as any).content.connections).toEqual([{ ...current.connections[0], targetMultiplicity: '0..*' }]);
+    const [, input] = (service.callOpenAI as jest.Mock).mock.calls[0];
+    expect(input[0].text).toContain('id: rel_cliente_venta');
+    expect(input[0].text).toContain('sourceMultiplicity: 1, targetMultiplicity: *');
+  });
+
+  it('logs accepted generated output with a bounded response and excludes prompts and credentials', async () => {
+    config.get.mockImplementation((key?: string) => key === 'OPENAI_API_KEY' ? 'secret-api-key' : 'gpt-test');
+    const logger = jest.spyOn((service as any).logger, 'log').mockImplementation();
+    const response = `${JSON.stringify({ intent: 'ask', message: 'Looks good.', actions: [] })}${' '.repeat(6000)}UNLOGGED-TAIL`;
+    respond(response);
+
+    await service.chat('owner', { message: 'private user prompt', diagramId: 'current' });
+
+    expect(logger).toHaveBeenCalledTimes(1);
+    const logged = logger.mock.calls[0][0] as string;
+    expect(logged).toContain(`length=${response.length}, truncated=true`);
+    expect(logged).toContain(response.slice(0, 6000));
+    expect(logged).toContain('[truncated]');
+    expect(logged).not.toContain('UNLOGGED-TAIL');
+    expect(logged).not.toContain('private user prompt');
+    expect(logged).not.toContain('secret-api-key');
+  });
+
   it('replaces an attribute by removing first and preserves other attribute semantics', async () => {
     const current = {
       elements: [{ id: 'sale', name: 'DetalleVenta', type: 'uml.Class', attributes: ['cantidades: int', 'precio: decimal'], attributeSemantics: [{ role: 'old' }, { role: 'price' }] }],

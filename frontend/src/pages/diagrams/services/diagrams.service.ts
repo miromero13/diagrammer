@@ -12,8 +12,8 @@ export const diagramsService = {
   updateDiagram: async (diagramId: string, payload: UpdateDiagramInput) => {
     return api.put(`/diagrams/${diagramId}`, payload)
   },
-  quickUpdateDiagram: async (diagramId: string, content: UpdateDiagramInput['content']) => {
-    return api.patch(`/diagrams/${diagramId}/quick-update`, { content })
+  quickUpdateDiagram: async (diagramId: string, content: UpdateDiagramInput['content'], expectedContent?: UpdateDiagramInput['content']) => {
+    return api.patch<DiagramDetailsResponse>(`/diagrams/${diagramId}/quick-update`, { content, expectedContent })
   },
   startGeneration: async (diagramId: string, payload: { companyName: string; backendName: string; authentication: Record<string, unknown> }) =>
     api.post<{ generationId: string }>(`/code-generation/diagrams/${diagramId}/generate`, payload),

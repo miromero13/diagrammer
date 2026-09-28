@@ -25,6 +25,7 @@ export type DiagramChatMessagesResponse = {
 
 export type DiagramAiChatInput = {
   message: string
+  mode?: 'ask' | 'agent'
   diagramId: string
   diagramData?: DiagramContent | Record<string, unknown>
   conversationHistory?: DiagramChatConversationTurn[]
@@ -77,6 +78,7 @@ export const diagramsAiService = {
     if (payload.attachments?.length) {
       const formData = new FormData()
       formData.append('message', payload.message)
+       if (payload.mode) formData.append('mode', payload.mode)
       formData.append('diagramId', payload.diagramId)
 
       if (payload.diagramData) formData.append('diagramData', JSON.stringify(payload.diagramData))
@@ -87,13 +89,13 @@ export const diagramsAiService = {
         formData.append('files', attachment.file, attachment.name)
       })
 
-      return api.post<{ success: boolean; message: string; mode: string; actions?: Array<Record<string, unknown>> }>(
+       return api.post<{ success: boolean; message: string; mode: string; content?: DiagramContent }>(
         '/ai/chat',
         formData,
       )
     }
 
-    return api.post<{ success: boolean; message: string; mode: string; actions?: Array<Record<string, unknown>> }>(
+     return api.post<{ success: boolean; message: string; mode: string; content?: DiagramContent }>(
       '/ai/chat',
       payload,
     )

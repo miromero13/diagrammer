@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 
 import { DiagramEntity } from './entities/diagram.entity';
@@ -9,6 +9,7 @@ import { ProjectEntity } from '../projects/entities/project.entity';
 import { ProjectMemberEntity } from '../projects/entities/project-member.entity';
 import { CreateDiagramDto } from '../projects/dto/project.dto';
 import { UserEntity } from '../users/entities/user.entity';
+import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 
 @Injectable()
 export class DiagramsService {
@@ -18,6 +19,7 @@ export class DiagramsService {
     @InjectRepository(ProjectMemberEntity) private readonly memberRepository: Repository<ProjectMemberEntity>,
     @InjectRepository(DiagramVersionEntity) private readonly versionRepository: Repository<DiagramVersionEntity>,
     @InjectRepository(UserEntity) private readonly userRepository: Repository<UserEntity>,
+    private readonly collaborationGateway: CollaborationGateway,
   ) {}
 
   private async ensureAccess(diagramId: string, userId: string) {
@@ -32,6 +34,80 @@ export class DiagramsService {
     return { diagram, project };
   }
 
+  async getEditableDiagram(userId: string, id: string) {
+    const { diagram, project } = await this.ensureAccess(id, userId);
+    const role = project.projectMembers?.find((member) => member.userId === userId)?.role;
+    if (project.ownerId !== userId && !['admin', 'editor'].includes(role || '')) throw new NotFoundException('Sin permisos para editar diagrama');
+    return diagram;
+  }
+
+  private equalJson(left: unknown, right: unknown) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  private mergeById<T extends Record<string, any>>(baseValue: unknown, proposedValue: unknown, latestValue: unknown): T[] {
+    const base = Array.isArray(baseValue) ? baseValue : [];
+    const proposed = Array.isArray(proposedValue) ? proposedValue : [];
+    const latest = Array.isArray(latestValue) ? latestValue : [];
+    const baseById = new Map(base.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+    const proposedById = new Map(proposed.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+    const latestById = new Map(latest.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+
+    for (const [id, oldItem] of baseById) {
+      const nextItem = proposedById.get(id);
+      if (!nextItem) latestById.delete(id);
+      else if (!this.equalJson(oldItem, nextItem)) latestById.set(id, nextItem);
+    }
+    for (const [id, nextItem] of proposedById) {
+      if (!baseById.has(id)) latestById.set(id, nextItem);
+    }
+    return [...latestById.values()] as T[];
+  }
+
+  private mergeContent(base: Record<string, any>, proposed: Record<string, any>, latest: Record<string, any>) {
+    const merged: Record<string, any> = { ...latest };
+    for (const key of new Set([...Object.keys(base), ...Object.keys(proposed)])) {
+      if (key === 'elements' || key === 'connections' || key === 'metadata') continue;
+      if (this.equalJson(base[key], proposed[key])) continue;
+      if (Object.prototype.hasOwnProperty.call(proposed, key)) merged[key] = proposed[key];
+      else delete merged[key];
+    }
+    merged.elements = this.mergeById(base.elements, proposed.elements, latest.elements);
+    merged.connections = this.mergeById(base.connections, proposed.connections, latest.connections);
+    const baseMetadata = base.metadata && typeof base.metadata === 'object' ? base.metadata : {};
+    const proposedMetadata = proposed.metadata && typeof proposed.metadata === 'object' ? proposed.metadata : {};
+    const latestMetadata = latest.metadata && typeof latest.metadata === 'object' ? latest.metadata : {};
+    const metadata = { ...latestMetadata };
+    for (const key of new Set([...Object.keys(baseMetadata), ...Object.keys(proposedMetadata)])) {
+      if (this.equalJson(baseMetadata[key], proposedMetadata[key])) continue;
+      if (Object.prototype.hasOwnProperty.call(proposedMetadata, key)) metadata[key] = proposedMetadata[key];
+      else delete metadata[key];
+    }
+    merged.metadata = metadata;
+    return merged;
+  }
+
+  async compareAndSave(userId: string, id: string, expected: unknown, content: Record<string, unknown>) {
+    await this.getEditableDiagram(userId, id);
+    if (!expected || typeof expected !== 'object' || Array.isArray(expected) || !content || typeof content !== 'object' || Array.isArray(content)) {
+      throw new ConflictException('Diagram content is invalid');
+    }
+    const base = expected as Record<string, any>;
+    const proposed = content as Record<string, any>;
+    const canonical = await this.diagramRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(DiagramEntity);
+      const latest = await repository.createQueryBuilder('diagram').setLock('pessimistic_write')
+        .where('diagram.id = :id AND diagram.isActive = true', { id }).getOne();
+      if (!latest) throw new NotFoundException('Diagrama no encontrado');
+      const merged = this.mergeContent(base, proposed, (latest.content ?? {}) as Record<string, any>);
+      const result = await repository.update({ id, isActive: true }, { content: merged });
+      if (result.affected !== 1) throw new ConflictException('Diagram changed. Reload and try again.');
+      return merged;
+    });
+    this.collaborationGateway.publishDiagramContent(id, canonical);
+    return canonical;
+  }
+
   async getDiagram(userId: string, id: string) {
     const { diagram } = await this.ensureAccess(id, userId);
     return diagram;
@@ -42,11 +118,16 @@ export class DiagramsService {
     const isOwner = project.ownerId === userId;
     const role = project.projectMembers?.find((m) => m.userId === userId)?.role;
     if (!isOwner && !['admin', 'editor'].includes(role || '')) throw new NotFoundException('Sin permisos para editar diagrama');
-    await this.diagramRepository.update(diagram.id, {
-      name: body.name ?? diagram.name,
-      description: body.description ?? diagram.description,
-      content: body.content !== undefined ? (typeof body.content === 'string' ? JSON.parse(body.content) : body.content) : diagram.content,
-    });
+    if (body.content !== undefined) {
+      const content = typeof body.content === 'string' ? JSON.parse(body.content) : body.content;
+      await this.compareAndSave(userId, id, diagram.content, content);
+    }
+    if (body.name !== undefined || body.description !== undefined) {
+      await this.diagramRepository.update(diagram.id, {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+      });
+    }
     return this.diagramRepository.findOneBy({ id });
   }
 
@@ -97,9 +178,9 @@ export class DiagramsService {
     return this.versionRepository.findOne({ where: { id: saved.id }, relations: { createdBy: true } });
   }
 
-  async quickUpdate(userId: string, id: string, content: any) {
-    const { diagram } = await this.ensureAccess(id, userId);
-    await this.diagramRepository.update(diagram.id, { content: typeof content === 'string' ? JSON.parse(content) : content });
+  async quickUpdate(userId: string, id: string, content: any, expected: unknown) {
+    const next = typeof content === 'string' ? JSON.parse(content) : content;
+    await this.compareAndSave(userId, id, expected, next);
     return this.diagramRepository.findOneBy({ id });
   }
 }

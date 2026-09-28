@@ -9,5 +9,6 @@ import { CollaborationStateService } from './collaboration-state.service';
 @Module({
   imports: [TypeOrmModule.forFeature([UserEntity, DiagramEntity])],
   providers: [CollaborationGateway, CollaborationStateService],
+  exports: [CollaborationGateway],
 })
 export class CollaborationModule {}

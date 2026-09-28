@@ -37,6 +37,14 @@ chmod +x gradlew
 ./gradlew bootRun
 ```
 
+## Usar la colección de Postman
+
+1. Importa `postman-collection.json` en Postman.
+2. Inicia el backend con `./gradlew bootRun`.
+3. En la colección, establece `baseUrl` (por defecto: `http://localhost:8090/api`).
+4. Si la autenticación está habilitada, completa `authPassword` y ejecuta `Authentication > Login`; el token se guardará automáticamente.
+5. Ejecuta las solicitudes CRUD desde la carpeta de cada recurso.
+
 Para ejecutar las pruebas opcionales:
 
 ```bash

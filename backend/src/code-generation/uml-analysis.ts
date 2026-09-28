@@ -119,7 +119,7 @@ const parseDecoration = (value: string) => {
   const defaultMatch = value.match(/\s*=\s*(.*?)\s*(?:\{[^}]+\})?$/);
   return { source: value.replace(/\s*=\s*.*?(?=\s*\{[^}]+\}\s*$|$)/, '').replace(/\s*\{[^}]+\}\s*$/, '').trim(), isStatic: modifiers.includes('static'), isAbstract: modifiers.includes('abstract'), isDerived: /^[-+~#]?\s*\//.test(value), defaultValue: defaultMatch?.[1]?.trim() || undefined };
 };
-const parseAttribute = (value: unknown) => {
+export const parseAttribute = (value: unknown) => {
   const decorated = parseDecoration(text(value)), source = decorated.source, match = source.match(/^([+\-#~])?\s*(\/)?\s*([A-Za-z_$][\w$]*)(?:\s*:\s*([^\[]+?)|\s+([^\[]+?))?\s*(?:\[([^\]]+)\])?$/);
   if (!match) return null;
   return { name: match[3], visibility: match[1] || null, sourceType: text(match[4] || match[5] || 'String'), multiplicity: parseMultiplicity(match[6] || ''), isStatic: decorated.isStatic, isAbstract: decorated.isAbstract, isDerived: Boolean(match[2]) || decorated.isDerived, defaultValue: decorated.defaultValue };
@@ -157,7 +157,7 @@ const renderedJavaType = (value: string) => {
   const parts = generic.parts.map(renderedJavaType);
   return name === 'Map' && parts.length === 1 ? `Map<String, ${parts[0]}>` : `${name}<${parts.join(', ')}>`;
 };
-const validUmlType = (value: string, names: Set<string>): boolean => {
+export const validUmlType = (value: string, names: Set<string>): boolean => {
   const compact = value.replace(/\s/g, '').replace(/\[\]$/, ''), generic = typeArguments(compact);
   if (primitiveTypes.has(compact.toLowerCase()) || names.has(compact.toLowerCase())) return true;
   if (!generic || !['list', 'set', 'map', 'array'].includes(generic.base.toLowerCase())) return false;

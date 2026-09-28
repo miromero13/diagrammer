@@ -35,8 +35,9 @@ export class ChatAiAttachmentDto {
 
 export class ChatAiDto {
   @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  message: string;
+  message?: string;
 
   @ApiPropertyOptional({ enum: ChatAiMode })
   @IsOptional()

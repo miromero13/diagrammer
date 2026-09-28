@@ -270,6 +270,52 @@ const isEditableTarget = (target: EventTarget | null) => {
 
 const emptyContent = (): DiagramContent => ({ elements: [], connections: [], metadata: {} })
 
+const stableJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
+}
+
+export const equivalentDiagramContent = (left: DiagramContent, right: DiagramContent) => {
+  const normalizedLeft = materializeManyToMany(left)
+  const normalizedRight = materializeManyToMany(right)
+  return stableJson(normalizedLeft.elements ?? []) === stableJson(normalizedRight.elements ?? [])
+    && stableJson(normalizedLeft.connections ?? []) === stableJson(normalizedRight.connections ?? [])
+}
+
+const mergeById = (base: Array<{ id?: string }>, proposed: Array<{ id?: string }>, latest: Array<{ id?: string }>) => {
+  const merged = new Map(latest.filter((item) => item.id).map((item) => [String(item.id), item]))
+  const baseById = new Map(base.filter((item) => item.id).map((item) => [String(item.id), item]))
+  const proposedById = new Map(proposed.filter((item) => item.id).map((item) => [String(item.id), item]))
+  baseById.forEach((item, id) => {
+    const next = proposedById.get(id)
+    if (!next) merged.delete(id)
+    else if (stableJson(item) !== stableJson(next)) merged.set(id, next)
+  })
+  proposedById.forEach((item, id) => { if (!baseById.has(id)) merged.set(id, item) })
+  return [...merged.values()]
+}
+
+export const mergeDiagramContent = (base: DiagramContent, local: DiagramContent, canonical: DiagramContent): DiagramContent => {
+  const merged: DiagramContent = { ...canonical }
+  merged.elements = mergeById(base.elements ?? [], local.elements ?? [], canonical.elements ?? []) as DiagramContent['elements']
+  merged.connections = mergeById(base.connections ?? [], local.connections ?? [], canonical.connections ?? []) as DiagramContent['connections']
+  const baseMetadata = base.metadata ?? {}
+  const localMetadata = local.metadata ?? {}
+  const metadata = { ...(canonical.metadata ?? {}) }
+  new Set([...Object.keys(baseMetadata), ...Object.keys(localMetadata)]).forEach((key) => {
+    if (stableJson(baseMetadata[key]) === stableJson(localMetadata[key])) return
+    if (Object.prototype.hasOwnProperty.call(localMetadata, key)) metadata[key] = localMetadata[key]
+    else delete metadata[key]
+  })
+  merged.metadata = metadata
+  return merged
+}
+
+export const isSaveResponseCurrent = (requestRevision: number, currentRevision: number) => requestRevision === currentRevision
+
 const kindToType = (kind: UmlKind) => (kind === 'interface' ? 'uml.Interface' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class')
 
 const typeToKind = (type?: string, name?: string, isAbstract?: boolean): UmlKind => {
@@ -498,6 +544,11 @@ const DiagramFlow = () => {
   const [collaborationSelections, setCollaborationSelections] = useState<Record<string, CollaborationSelection>>({})
   const [remoteMotionByElement, setRemoteMotionByElement] = useState<Record<string, RemoteMotionState>>({})
   const saveTimerRef = useRef<number | null>(null)
+  const savedContentRef = useRef<DiagramContent | null>(null)
+  const serverSnapshotRevisionRef = useRef(0)
+  const saveInFlightRef = useRef<Promise<void> | null>(null)
+  const skipSaveRef = useRef(false)
+  const chatSendingRef = useRef(false)
   const loadingRef = useRef(true)
   const nodeSyncThrottleRef = useRef<number | null>(null)
   const nodesRef = useRef(nodes)
@@ -604,7 +655,8 @@ const DiagramFlow = () => {
         try {
           const response = await diagramsService.getDiagram(diagramId)
           const content = materializeManyToMany(response.content ?? emptyContent())
-          setDiagram({ ...response, content })
+           setDiagram({ ...response, content })
+           savedContentRef.current = response.content ?? emptyContent()
           setNodes(toNodes(content))
           setEdges(toEdges(content))
           historyRef.current = {
@@ -880,6 +932,21 @@ const DiagramFlow = () => {
       removeRemoteElement(elementId)
     }
 
+    const onDiagramContentSaved = (payload?: { diagramId: string; content: DiagramContent }) => {
+      if (payload?.diagramId !== diagramId || !payload.content) return
+      if (savedContentRef.current && equivalentDiagramContent(payload.content, savedContentRef.current)) return
+      const base = savedContentRef.current ?? emptyContent()
+      const local = toContent(nodesRef.current, edgesRef.current)
+      const reconciled = mergeDiagramContent(base, local, payload.content)
+      serverSnapshotRevisionRef.current += 1
+      savedContentRef.current = payload.content
+      nodesRef.current = toNodes(reconciled)
+      edgesRef.current = toEdges(reconciled)
+      setNodes(nodesRef.current)
+      setEdges(edgesRef.current)
+      setDiagram((current) => current ? { ...current, content: payload.content } : current)
+    }
+
     const subscriptions: Array<[Parameters<typeof socketManager.on>[0], (data?: any) => void]> = [
       ['socketConnected', onConnected],
       ['socketDisconnected', onDisconnected],
@@ -896,6 +963,7 @@ const DiagramFlow = () => {
       ['elementAdded', onElementAdded],
       ['elementUpdated', onElementUpdated],
       ['elementDeleted', onElementDeleted],
+      ['diagramContentSaved', onDiagramContentSaved],
     ]
 
     subscriptions.forEach(([event, handler]) => socketManager.on(event, handler))
@@ -926,17 +994,29 @@ const DiagramFlow = () => {
 
   useEffect(() => {
     if (loading || !diagramId) return
+    if (skipSaveRef.current) { skipSaveRef.current = false; return }
+    if (chatSendingRef.current) return
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
 
     saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+      const previous = saveInFlightRef.current
+      const save = Promise.resolve().then(async () => {
         try {
+          if (previous) await previous
+          if (chatSendingRef.current) return
           const content = toContent(nodes, edges)
-          await diagramsService.quickUpdateDiagram(diagramId, content)
-        } catch {
-          // keep going, manual save still works
+          if (!savedContentRef.current) return
+          const serverSnapshotRevision = serverSnapshotRevisionRef.current
+          const response = await diagramsService.quickUpdateDiagram(diagramId, content, savedContentRef.current)
+          if (isSaveResponseCurrent(serverSnapshotRevision, serverSnapshotRevisionRef.current)) {
+            savedContentRef.current = response.content
+            setDiagram((current) => current ? { ...current, content: response.content } : current)
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'No se pudo guardar el diagrama')
         }
-      })()
+      })
+      saveInFlightRef.current = save
     }, 750)
 
     return () => {
@@ -1162,161 +1242,6 @@ const DiagramFlow = () => {
     recognition.start()
     setIsRecordingVoice(true)
   }, [chatInput, isRecordingVoice])
-
-  const applyAiActions = useCallback((actions: Array<Record<string, any>>) => {
-    if (!Array.isArray(actions) || actions.length === 0) return
-
-    pushHistory()
-
-    const resolveNodeId = (reference: any) => {
-      const raw = typeof reference === 'object' ? reference?.id ?? reference?.name ?? reference?.alias : reference
-      if (!raw) return ''
-      const value = String(raw)
-      const lower = value.toLowerCase()
-      const existing = nodesRef.current.find((node) =>
-        node.id === value ||
-        node.id === lower ||
-        stripPrefix(node.data.name).toLowerCase() === lower ||
-        node.data.name.toLowerCase() === lower
-      )
-      return existing?.id ?? value
-    }
-
-    const resolveEdgeId = (reference: any) => {
-      const raw = typeof reference === 'object' ? reference?.id ?? reference?.name ?? reference?.alias : reference
-      if (!raw) return ''
-      const value = String(raw)
-      const lower = value.toLowerCase()
-      const existing = edgesRef.current.find((edge) => edge.id === value || edge.id === lower)
-      return existing?.id ?? value
-    }
-
-    actions.forEach((action) => {
-      const type = String(action?.type || '')
-      const data = action?.data ?? {}
-
-      if (type === 'create_class' || type === 'create_interface' || type === 'create_abstract_class' || type === 'create_enum') {
-        const id = String(data.id ?? createId())
-        const kind: UmlKind = type === 'create_interface' ? 'interface' : type === 'create_abstract_class' ? 'abstract' : type === 'create_enum' ? 'enum' : 'class'
-        const nextNode: Node<DiagramNodeData> = {
-          id,
-          type: 'umlNode',
-          position: data.position ?? { x: 100, y: 100 },
-          data: {
-            name: String(data.name ?? 'Class'),
-            kind,
-            attributes: Array.isArray(data.attributes) ? data.attributes : [],
-            methods: Array.isArray(data.methods) ? data.methods : [],
-            literals: Array.isArray(data.literals) ? data.literals : [],
-            onEdit: openNodeEditor,
-            themeMode,
-          },
-        }
-
-        setNodes((current) => {
-          const exists = current.some((node) => node.id === id)
-          if (!exists) return current.concat(nextNode)
-          return current.map((node) => node.id === id ? { ...node, ...nextNode, data: { ...node.data, ...nextNode.data } } : node)
-        })
-        return
-      }
-
-      if (type === 'create_relationship') {
-        const id = String(data.id ?? createId())
-        const source = resolveNodeId(data.sourceId ?? data.source ?? data.sourceName)
-        const target = resolveNodeId(data.targetId ?? data.target ?? data.targetName)
-        if (!source || !target) return
-
-        const relationType = normalizeRelationType(data.type ?? data.relationType ?? 'association')
-        const endpoints = normalizeEnumUsageEndpoints(relationType, { source, target }, new Map(nodesRef.current.map((node) => [node.id, { type: kindToType(node.data.kind), name: node.data.name }])))
-        const nextEdge: Edge<DiagramEdgeData> = {
-          id,
-          source: endpoints.source,
-          target: endpoints.target,
-          type: 'umlEdge',
-          data: {
-            relationType,
-            sourceMultiplicity: data.sourceMultiplicity ?? '1',
-            targetMultiplicity: data.targetMultiplicity ?? '1',
-            onEdit: openEdgeEditor,
-            themeMode,
-          },
-        }
-
-        setEdges((current) => {
-          const exists = current.some((edge) => edge.id === id)
-          if (!exists) return current.concat(nextEdge)
-          return current.map((edge) => edge.id === id ? ({ ...edge, ...nextEdge, data: { ...edge.data, ...nextEdge.data } } as Edge<DiagramEdgeData>) : edge)
-        })
-        return
-      }
-
-      if (type === 'delete_element') {
-        const targetId = resolveNodeId(data.targetId ?? data.id)
-        const nodeExists = nodesRef.current.some((node) => node.id === targetId)
-        if (nodeExists) {
-          setNodes((current) => current.filter((node) => node.id !== targetId))
-          setEdges((current) => current.filter((edge) => edge.source !== targetId && edge.target !== targetId))
-          return
-        }
-        const edgeId = resolveEdgeId(data.targetId ?? data.id)
-        if (edgesRef.current.some((edge) => edge.id === edgeId)) setEdges((current) => current.filter((edge) => edge.id !== edgeId))
-        return
-      }
-
-      const targetId = resolveNodeId(data.targetId ?? data.id)
-      if (targetId) {
-        setNodes((current) => current.map((node) => {
-          if (node.id !== targetId) return node
-
-          const nextAttributes = Array.isArray(data.attributes)
-            ? data.attributes
-            : Array.isArray(data.addAttributes)
-              ? [...node.data.attributes, ...data.addAttributes]
-              : Array.isArray(data.removeAttributes)
-                ? node.data.attributes.filter((attribute) => !data.removeAttributes.includes(attribute))
-                : node.data.attributes
-
-          return {
-            ...node,
-            position: data.position ?? node.position,
-            data: {
-              ...node.data,
-              ...(typeof data.name === 'string' ? { name: stripPrefix(data.name) } : {}),
-              ...(Array.isArray(data.methods) ? { methods: data.methods } : {}),
-              ...(Array.isArray(data.literals) ? { literals: data.literals } : {}),
-              attributes: nextAttributes,
-              themeMode,
-            },
-          }
-        }))
-        return
-      }
-
-      const edgeId = resolveEdgeId(data.targetId ?? data.id)
-      if (edgeId) {
-        setEdges((current) => current.map((edge) => {
-          if (edge.id !== edgeId) return edge
-          return {
-            ...edge,
-            source: data.sourceId ? resolveNodeId(data.sourceId) : edge.source,
-            target: data.targetId ? resolveNodeId(data.targetId) : edge.target,
-            data: {
-              ...edge.data,
-              ...(typeof data.type === 'string' ? { relationType: normalizeRelationType(data.type) } : {}),
-              ...(typeof data.relationType === 'string' ? { relationType: normalizeRelationType(data.relationType) } : {}),
-              ...(typeof data.sourceMultiplicity === 'string' ? { sourceMultiplicity: data.sourceMultiplicity } : {}),
-              ...(typeof data.targetMultiplicity === 'string' ? { targetMultiplicity: data.targetMultiplicity } : {}),
-              onEdit: openEdgeEditor,
-              themeMode,
-            },
-          } as Edge<DiagramEdgeData>
-        }))
-        return
-      }
-
-    })
-  }, [openEdgeEditor, openNodeEditor, pushHistory, setEdges, setNodes, themeMode])
 
   const addNode = (kind: UmlKind) => {
     pushHistory()
@@ -1706,7 +1631,9 @@ const DiagramFlow = () => {
     setEditorId(null)
     pendingRelationSourceId.current = null
 
-    await diagramsService.quickUpdateDiagram(diagramId, normalizedContent)
+     if (!savedContentRef.current) throw new Error('Reload the diagram before importing')
+     const response = await diagramsService.quickUpdateDiagram(diagramId, normalizedContent, savedContentRef.current)
+     savedContentRef.current = response.content
   }, [diagramId, pushHistory, setDiagram, setEdges, setNodes])
 
   const sendChatMessage = useCallback(async () => {
@@ -1723,35 +1650,58 @@ const DiagramFlow = () => {
     if (!message && chatAttachments.length === 0) return
 
     setChatSending(true)
+    chatSendingRef.current = true
     setChatError(null)
 
     try {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+      if (saveInFlightRef.current) await saveInFlightRef.current
+      if (!savedContentRef.current) throw new Error('Reload the diagram before editing')
+      const currentContent = toContent(nodesRef.current, edgesRef.current)
+      const pending = JSON.stringify(currentContent.elements) !== JSON.stringify(savedContentRef.current.elements) || JSON.stringify(currentContent.connections) !== JSON.stringify(savedContentRef.current.connections)
+      if (pending) {
+        const saved = await diagramsService.quickUpdateDiagram(diagramId, currentContent, savedContentRef.current)
+        savedContentRef.current = saved.content
+      }
       const response = await diagramsAiService.chat({
         message,
         diagramId,
-        diagramData: toContent(nodesRef.current, edgesRef.current),
         conversationHistory: buildConversationHistory(chatMessages),
         attachments: chatAttachments,
       })
 
       if (!response.success) throw new Error(response.message || 'Could not apply diagram changes')
 
-      if (Array.isArray(response.actions) && response.actions.length > 0) {
-        applyAiActions(response.actions as Array<Record<string, any>>)
+      if (response.content) {
+        skipSaveRef.current = true
+        savedContentRef.current = response.content
+        nodesRef.current = toNodes(response.content)
+        edgesRef.current = toEdges(response.content)
+        setNodes(nodesRef.current)
+        setEdges(edgesRef.current)
+        setDiagram((current) => current ? { ...current, content: response.content! } : current)
       }
 
       setChatInput('')
       chatInputRef.current = ''
       clearChatAttachments()
 
-      const refreshed = await diagramsAiService.getDiagramMessages(diagramId)
-      setChatMessages(refreshed.messages || [])
+      try {
+        const refreshed = await diagramsAiService.getDiagramMessages(diagramId)
+        setChatMessages(refreshed.messages || [])
+      } catch {
+        setChatMessages((current) => current.concat(
+          { id: createId(), role: 'user', content: message } as DiagramChatMessage,
+          { id: createId(), role: 'assistant', content: response.message } as DiagramChatMessage,
+        ))
+      }
     } catch (err) {
       setChatError(err instanceof Error ? err.message : 'No se pudo enviar el mensaje')
     } finally {
+      chatSendingRef.current = false
       setChatSending(false)
     }
-  }, [applyAiActions, buildConversationHistory, chatAttachments, chatSending, clearChatAttachments, diagramId, edgesRef, isRecordingVoice, nodesRef, chatMessages])
+  }, [buildConversationHistory, chatAttachments, chatSending, clearChatAttachments, diagramId, isRecordingVoice, chatMessages, setNodes, setEdges])
 
   useEffect(() => {
     sendChatMessageRef.current = () => {
@@ -1919,7 +1869,10 @@ const DiagramFlow = () => {
                   attributes: node.data.attributes
                 }))}
                 saveDiagram={async () => {
-                  if (diagramId) await diagramsService.quickUpdateDiagram(diagramId, toContent(nodesRef.current, edgesRef.current))
+                  if (diagramId && savedContentRef.current) {
+                    const saved = await diagramsService.quickUpdateDiagram(diagramId, toContent(nodesRef.current, edgesRef.current), savedContentRef.current)
+                    savedContentRef.current = saved.content
+                  }
                 }}
               />
               <DiagramExportDropdown

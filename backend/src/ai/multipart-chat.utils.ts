@@ -76,7 +76,11 @@ export async function buildChatPayloadFromMultipart(req: any): Promise<ChatAiDto
     payload.attachments = [...(Array.isArray(payload.attachments) ? payload.attachments : []), ...attachments];
   }
 
-  if (typeof payload.message !== 'string' || !payload.message.trim()) {
+  if (payload.message !== undefined && typeof payload.message !== 'string') {
+    throw new BadRequestException('Message must be a string');
+  }
+
+  if (!payload.message?.trim() && !attachments.some((attachment) => attachment.base64 || attachment.text)) {
     throw new BadRequestException('Message is required');
   }
 

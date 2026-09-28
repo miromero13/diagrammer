@@ -66,4 +66,14 @@ describe('multipart-chat utils', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('rejects non-string JSON messages with a controlled validation error', async () => {
+    await expect(
+      buildChatPayloadFromMultipart({
+        parts: async function* () {
+          yield { type: 'field', fieldname: 'message', value: '{"unexpected":true}' };
+        },
+      }),
+    ).rejects.toMatchObject({ message: 'Message must be a string', status: 400 });
+  });
 });

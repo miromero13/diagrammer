@@ -38,6 +38,6 @@ export class DiagramsController {
 
   @Patch(':id/quick-update')
   quickUpdate(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.diagramsService.quickUpdate(req.user.id, id, body.content);
+    return this.diagramsService.quickUpdate(req.user.id, id, body.content, body.expectedContent);
   }
 }

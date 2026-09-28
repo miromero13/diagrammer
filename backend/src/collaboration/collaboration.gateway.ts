@@ -12,6 +12,9 @@ import { CollaborationStateService } from './collaboration-state.service';
 
 @WebSocketGateway({ cors: { origin: true, credentials: true } })
 export class CollaborationGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  publishDiagramContent(diagramId: string, content: Record<string, unknown>) {
+    this.server.to(`diagram:${diagramId}`).emit('diagramContentSaved', { diagramId, content });
+  }
   @WebSocketServer()
   server: Server;
 
@@ -142,8 +145,10 @@ export class CollaborationGateway implements OnGatewayInit, OnGatewayConnection,
 
   private async handleDiagramJoin(client: Socket, diagramId: string) {
     const user = client.data.user as UserEntity;
-    const diagram = await this.diagramRepository.findOne({ where: { id: diagramId } });
-    if (!diagram) return client.emit('error', { message: 'Diagrama no encontrado' });
+    const diagram = await this.diagramRepository.findOne({ where: { id: diagramId, isActive: true }, relations: { project: { projectMembers: true } } });
+    if (!diagram || !(diagram.project.ownerId === user.id || diagram.project.isPublic || diagram.project.projectMembers?.some((member) => member.userId === user.id))) {
+      return client.emit('error', { message: 'Diagrama no encontrado' });
+    }
 
     client.join(`diagram:${diagramId}`);
     client.data.currentDiagram = diagramId;

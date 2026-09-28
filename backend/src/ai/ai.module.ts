@@ -6,9 +6,10 @@ import { AiService } from './ai.service';
 import { AIInteractionEntity } from './entities/ai-interaction.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserEntity } from 'src/users/entities/user.entity';
+import { DiagramsModule } from '../diagrams/diagrams.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AIInteractionEntity, UserEntity])],
+  imports: [TypeOrmModule.forFeature([AIInteractionEntity, UserEntity]), DiagramsModule],
   controllers: [AiController],
   providers: [AiService, JwtAuthGuard],
   exports: [AiService],

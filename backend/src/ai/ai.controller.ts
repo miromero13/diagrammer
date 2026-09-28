@@ -22,7 +22,7 @@ export class AiController {
       .transform(input, { type: 'body', metatype: ChatAiDto });
     const message = payload?.message?.trim();
 
-    if (!message) {
+    if (!message && !payload.attachments?.some((attachment) => attachment?.base64 || attachment?.text)) {
       throw new BadRequestException('Message is required');
     }
 

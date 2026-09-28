@@ -8,8 +8,8 @@ import { randomUUID } from 'crypto';
 import { AIInteractionEntity } from './entities/ai-interaction.entity';
 import { AIInteractionType } from './enums/ai-interaction-type.enum';
 import { ChatAiAttachmentDto, ChatAiDto, ChatAiMode } from './dto/chat-ai.dto';
-import { containsDiagramCommand, parseDiagramCommands } from './diagram-command-parser';
 import { parseAttribute, validUmlType } from '../code-generation/uml-analysis';
+import { DiagramsService } from '../diagrams/diagrams.service';
 
 type OpenAIInputPart = { type: 'input_text'; text: string } | { type: 'input_image'; image_url: string } | { type: 'input_file'; filename: string; file_data: string };
 
@@ -22,7 +22,7 @@ type DiagramContent = {
 type AgentResponse = {
   message: string;
   actions: Array<Record<string, any>>;
-  mode: ChatAiMode.AGENT;
+  mode: ChatAiMode;
 };
 
 @Injectable()
@@ -39,7 +39,7 @@ Puedes:
 - Validar buenas prácticas
 
 Responde siempre en español, de manera clara y educativa. Si no tienes información sobre el diagrama, pregunta por más detalles.`,
-    agent: `Interpret the user's requested diagram creation or edit using the attached image/document and current diagram. Return ONLY a JSON object: {"message":"brief result","actions":[{"type":"create_class","data":{"id":"unique-id","name":"User","attributes":[],"methods":[],"position":{"x":100,"y":100}}}]}. Actions must be nonempty and directly executable. Supported types: create_class, create_interface, create_abstract_class, create_enum, create_relationship, modify_element, delete_element. Create nodes with unique ids and names; create_enum also needs literals (strings). Attributes must be UML name: type strings using String, UUID, int, boolean, date, datetime, existing class names, or List/Set/Map of these; never SQL types or PK/FK annotations. For create_relationship use data {"id":"unique-id","type":"association|dependency|inheritance|implementation|composition|aggregation","sourceId":"existing-or-new-node-id","targetId":"existing-or-new-node-id","sourceMultiplicity":"1","targetMultiplicity":"*"}. For modify_element use data {"targetId":"existing-node-id","name":"NewName"} or attributes/methods/literals/position/addAttributes/removeAttributes. For delete_element use data {"targetId":"existing-node-or-edge-id"}. Use exact existing IDs from the diagram; new relationship endpoints must reference existing or created node IDs. Do not use names as references. Only emit fields supported by these actions; no explanatory prose or markdown outside JSON. If the attachment does not contain enough information, return {"message":"Cannot determine diagram changes","actions":[]}.`,
+    agent: `Interpret the user's free-form Spanish or English text, image and current diagram. Return ONLY JSON {"intent":"ask|edit","message":"natural-language response","actions":[]}. Questions and explanations without a request to change the diagram are ask with no actions. Requests to create or edit content in the current diagram are edit with nonempty actions. An image alone requests creation or updating from the image; preserve unrelated existing content. Never delete or replace existing content unless clearly requested; if destructive intent is ambiguous, ask for clarification with no actions. If edits cannot be determined safely, return ask with an honest explanation and no actions. Supported action types: create_class, create_interface, create_abstract_class, create_enum, create_relationship, modify_element, delete_element. Create nodes with unique ids and names; create_enum needs literals (strings). Attributes must be UML name: type strings using String, UUID, int, boolean, date, datetime, existing class names, or List/Set/Map of these; never SQL types or PK/FK annotations. For create_relationship use data {"id":"unique-id","type":"association|dependency|inheritance|implementation|composition|aggregation","sourceId":"existing-or-new-node-id","targetId":"existing-or-new-node-id","sourceMultiplicity":"1","targetMultiplicity":"*"}. For modify_element use data {"targetId":"existing-node-id","name":"NewName"} or attributes/methods/literals/position/addAttributes/removeAttributes. For delete_element use data {"targetId":"existing-node-or-edge-id"}. Use exact existing IDs; new relationship endpoints reference existing or created node IDs. Do not use names as references. Only emit supported fields.`,
   };
 
   private initialized = false;
@@ -50,6 +50,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     @InjectRepository(AIInteractionEntity)
     private readonly interactionsRepository: Repository<AIInteractionEntity>,
     private readonly configService: ConfigService,
+    private readonly diagramsService: DiagramsService,
   ) {}
 
   private initialize() {
@@ -68,7 +69,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
   ) {
     let context = '';
 
-    context += 'Objetivo: genera o corrige un esquema de base de datos con acciones concretas y mínimas.\n';
+    context += 'Current diagram context; respect the user intent and existing content.\n';
 
     if (diagramData) {
       const elements = diagramData.elements ?? diagramData.content?.elements ?? [];
@@ -130,17 +131,8 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     return value.includes('base64,') ? value.split('base64,').pop() || value : value;
   }
 
-  private inferMode(payload: ChatAiDto) {
-    if (payload.mode) return payload.mode;
-    const agentKeywords = /\b(crear|crea|genera|generar|diseña|diseñar|construye|construir|corrige|corregir|modifica|modificar|actualiza|actualizar|renombra|renombrar|agrega|agregar|añade|elimina|eliminar|create|generate|design|build|edit|modify|update|rename|add|delete|remove|fix)\b/i;
-    if (/^\s*¿?\s*(?:qué|que es|cómo|como|cuál|cuáles|por qué|what|how|why|explain)\b/i.test(payload.message || '')) return ChatAiMode.ASK;
-    if (agentKeywords.test(payload.message || '')) return ChatAiMode.AGENT;
-
-    return ChatAiMode.ASK;
-  }
-
   private buildUserParts(payload: ChatAiDto, context: string): OpenAIInputPart[] {
-    const parts: OpenAIInputPart[] = [{ type: 'input_text', text: `${context}\n\nUsuario: ${payload.message}`.trim() }];
+    const parts: OpenAIInputPart[] = [{ type: 'input_text', text: `${context}\n\nUser: ${payload.message?.trim() || '[Attachment provided]'}`.trim() }];
     const attachments = payload.attachments || [];
 
     attachments.forEach((attachment) => {
@@ -187,6 +179,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
   private getElementTypeFromAction(actionType: string) {
     if (actionType === 'create_interface') return 'uml.Interface';
     if (actionType === 'create_abstract_class') return 'uml.AbstractClass';
+    if (actionType === 'create_enum') return 'uml.Enumeration';
     return 'uml.Class';
   }
 
@@ -194,6 +187,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const name = String(data?.name ?? '');
     if (actionType === 'create_interface' && !name.startsWith('<<interface>>')) return `<<interface>>\n${name}`;
     if (actionType === 'create_abstract_class' && !name.startsWith('<<abstract>>')) return `<<abstract>>\n${name}`;
+    if (actionType === 'create_enum' && !name.startsWith('<<enumeration>>')) return `<<enumeration>>\n${name}`;
     return name;
   }
 
@@ -201,7 +195,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const map = new Map<string, string>();
 
     actions.forEach((action) => {
-      if (!['create_class', 'create_interface', 'create_abstract_class'].includes(String(action.type))) return;
+      if (!['create_class', 'create_interface', 'create_abstract_class', 'create_enum'].includes(String(action.type))) return;
       const data = action.data ?? {};
       const id = String(data.id ?? randomUUID());
       const name = String(data.name ?? '');
@@ -227,7 +221,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
       const type = String(action.type);
       const data = action.data ?? {};
 
-      if (['create_class', 'create_interface', 'create_abstract_class'].includes(type)) {
+      if (['create_class', 'create_interface', 'create_abstract_class', 'create_enum'].includes(type)) {
         const id = String(data.id ?? randomUUID());
         idMap.set(id.toLowerCase(), id);
         if (data.name) idMap.set(String(data.name).toLowerCase(), id);
@@ -238,13 +232,12 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           name: this.getElementNameFromAction(type, data),
           attributes: Array.isArray(data.attributes) ? data.attributes : [],
           methods: Array.isArray(data.methods) ? data.methods : [],
+          literals: Array.isArray(data.literals) ? data.literals : [],
           position: data.position ?? { x: 100, y: 100 },
           size: data.size,
         };
 
-        const index = content.elements.findIndex((item) => String(item.id) === id);
-        if (index >= 0) content.elements[index] = { ...content.elements[index], ...element };
-        else content.elements.push(element);
+        content.elements.push(element);
         return;
       }
 
@@ -252,7 +245,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
         const id = String(data.id ?? randomUUID());
         const sourceId = this.resolveReference(data.sourceId ?? data.source ?? data.sourceName, idMap);
         const targetId = this.resolveReference(data.targetId ?? data.target ?? data.targetName, idMap);
-        if (!sourceId || !targetId) return;
+        if (!sourceId || !targetId) throw new BadRequestException('Invalid relationship endpoints');
 
         const connection = {
           id,
@@ -265,14 +258,18 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           targetMultiplicity: data.targetMultiplicity ?? '1',
         };
 
-        const index = content.connections.findIndex((item) => String(item.id) === id);
-        if (index >= 0) content.connections[index] = { ...content.connections[index], ...connection };
-        else content.connections.push(connection);
+        content.connections.push(connection);
         return;
       }
 
       const targetId = String(data.targetId ?? data.id ?? '');
-      if (!targetId) return;
+       if (!targetId) throw new BadRequestException('Missing action target');
+
+       if (type === 'delete_element') {
+         content.elements = content.elements.filter((item) => item.id !== targetId);
+         content.connections = content.connections.filter((item) => item.id !== targetId && item.sourceId !== targetId && item.targetId !== targetId);
+         return;
+       }
 
       const elementIndex = content.elements.findIndex((item) => String(item.id) === targetId);
       if (elementIndex >= 0) {
@@ -288,27 +285,17 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
 
         content.elements[elementIndex] = {
           ...current,
-          ...(typeof data.name === 'string' ? { name: data.name } : {}),
+           ...(typeof data.name === 'string' ? { name: this.getElementNameFromAction(current.type === 'uml.Interface' ? 'create_interface' : current.type === 'uml.Enumeration' ? 'create_enum' : current.type === 'uml.AbstractClass' ? 'create_abstract_class' : 'create_class', data) } : {}),
           ...(typeof data.type === 'string' ? { type: data.type } : {}),
           ...(typeof data.position === 'object' ? { position: data.position } : {}),
-          ...(Array.isArray(data.methods) ? { methods: data.methods } : {}),
+           ...(Array.isArray(data.methods) ? { methods: data.methods } : {}),
+           ...(Array.isArray(data.literals) ? { literals: data.literals } : {}),
           attributes: nextAttributes,
         };
         return;
       }
 
-      const connectionIndex = content.connections.findIndex((item) => String(item.id) === targetId);
-      if (connectionIndex >= 0) {
-        content.connections[connectionIndex] = {
-          ...content.connections[connectionIndex],
-          ...(typeof data.sourceId === 'string' ? { sourceId: this.resolveReference(data.sourceId, idMap), source: this.resolveReference(data.sourceId, idMap) } : {}),
-          ...(typeof data.targetId === 'string' ? { targetId: this.resolveReference(data.targetId, idMap), target: this.resolveReference(data.targetId, idMap) } : {}),
-          ...(typeof data.type === 'string' ? { type: data.type } : {}),
-          ...(typeof data.relationType === 'string' ? { type: data.relationType } : {}),
-          ...(typeof data.sourceMultiplicity === 'string' ? { sourceMultiplicity: data.sourceMultiplicity } : {}),
-          ...(typeof data.targetMultiplicity === 'string' ? { targetMultiplicity: data.targetMultiplicity } : {}),
-        };
-      }
+       throw new BadRequestException('Missing action target');
     });
 
     return content;
@@ -378,8 +365,12 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     try {
       const jsonPayload = this.extractJsonPayload(aiResponse);
       const parsed = JSON.parse(jsonPayload || 'null');
+      if (typeof parsed?.message !== 'string' || !parsed.message.trim() || /^\s*(?:[{[]|```|@startuml)/i.test(parsed.message)) throw new Error('Non-conversational response');
+      if (parsed?.intent === 'ask' && Array.isArray(parsed.actions) && parsed.actions.length === 0 && typeof parsed.message === 'string' && parsed.message.trim()) {
+        return { success: true, message: parsed.message, actions: [], mode: ChatAiMode.ASK };
+      }
       const actions = this.validateActions(parsed?.actions, diagramData);
-      if (typeof parsed?.message !== 'string' || !parsed.message.trim() || !actions) throw new Error('Invalid diagram response');
+      if (parsed?.intent !== 'edit' || typeof parsed?.message !== 'string' || !parsed.message.trim() || !actions) throw new Error('Invalid diagram response');
       return { success: true, message: parsed.message, actions, mode: ChatAiMode.AGENT };
     } catch {
       return { success: false, message: 'Could not apply diagram changes. Please clarify your request.', actions: [], mode: ChatAiMode.AGENT };
@@ -391,7 +382,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
     const content = this.normalizeDiagramContent(diagramData);
     const nodeIds = new Set(content.elements.map((item) => item.id));
     const edgeIds = new Set(content.connections.map((item) => item.id));
-    const names = new Set(content.elements.map((item) => String(item.name).toLowerCase()));
+    const names = new Set(content.elements.map((item) => String(item.name).replace(/^<<.*?>>\n/, '').toLowerCase()));
     const typeNames = new Set([...names, ...actions.filter((action) => action && typeof action === 'object' && ['create_class', 'create_interface', 'create_abstract_class', 'create_enum'].includes(action.type) && typeof action.data?.name === 'string').map((action) => action.data.name.toLowerCase())]);
     const string = (value: unknown): value is string => typeof value === 'string' && !!value.trim();
     const strings = (value: unknown) => Array.isArray(value) && value.every(string);
@@ -412,7 +403,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           (data.attributes !== undefined && !attributes(data.attributes)) || (data.methods !== undefined && !strings(data.methods)) ||
           (data.literals !== undefined && !strings(data.literals)) || (type === 'create_enum' && !strings(data.literals)) || (data.position !== undefined && !position(data.position))) return null;
         const id = data.id ?? randomUUID();
-        if (!string(id) || nodeIds.has(id) || names.has(data.name.toLowerCase())) return null;
+         if (!string(id) || nodeIds.has(id) || edgeIds.has(id) || names.has(data.name.toLowerCase())) return null;
         nodeIds.add(id);
         names.add(data.name.toLowerCase());
         valid.push({ type, data: { ...data, id, position: data.position ?? { x: 100, y: 100 } } });
@@ -422,7 +413,7 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           (data.type !== undefined && !['association', 'dependency', 'inheritance', 'implementation', 'composition', 'aggregation'].includes(data.type)) ||
           (data.sourceMultiplicity !== undefined && !string(data.sourceMultiplicity)) || (data.targetMultiplicity !== undefined && !string(data.targetMultiplicity))) return null;
         const id = data.id ?? randomUUID();
-        if (!string(id) || edgeIds.has(id)) return null;
+         if (!string(id) || edgeIds.has(id) || nodeIds.has(id)) return null;
         edgeIds.add(id);
         valid.push({ type, data: { ...data, id } });
       } else if (type === 'modify_element') {
@@ -433,7 +424,14 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
           ['attributes', 'methods', 'literals', 'addAttributes', 'removeAttributes'].some((key) => data[key] !== undefined && !strings(data[key])) ||
           ['attributes', 'addAttributes'].some((key) => data[key] !== undefined && !attributes(data[key])) ||
           (data.position !== undefined && !position(data.position))) return null;
-        valid.push(action);
+         if (data.name !== undefined) {
+           const old = content.elements.find((item) => item.id === data.targetId);
+           const next = data.name.toLowerCase();
+           if (names.has(next) && old?.name?.replace(/^<<.*?>>\n/, '').toLowerCase() !== next) return null;
+           names.delete(String(old?.name).replace(/^<<.*?>>\n/, '').toLowerCase());
+           names.add(next);
+         }
+         valid.push(action);
       } else if (type === 'delete_element') {
         if (!allowed(data, ['targetId']) || !string(data.targetId) || (!nodeIds.has(data.targetId) && !edgeIds.has(data.targetId))) return null;
         if (nodeIds.delete(data.targetId)) {
@@ -466,33 +464,24 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
   }
 
   async chat(userId: string, payload: ChatAiDto) {
-    if (!payload.message?.trim()) {
-      throw new BadRequestException('Message is required');
-    }
+     if (!payload.message?.trim() && !payload.attachments?.some((item) => item.base64 || item.text)) throw new BadRequestException('Message or attachment is required');
+     if (!payload.diagramId) throw new BadRequestException('Open diagram is required');
+     const diagram = await this.diagramsService.getDiagram(userId, payload.diagramId);
+     const context = this.buildContext(diagram.content, payload.conversationHistory || [], payload.sourceText || null, payload.attachments || []);
+     const userParts = this.buildUserParts(payload, context);
 
-    const mode = this.inferMode(payload);
+     try {
+       const aiResponse = await this.callOpenAI(this.systemPrompts.agent, userParts, ChatAiMode.AGENT);
+       const processedResponse = this.processAgentResponse(aiResponse, diagram.content);
+       if (processedResponse.success && processedResponse.mode === ChatAiMode.AGENT) {
+         const content = this.buildContentFromActions(diagram.content, processedResponse.actions);
+         await this.diagramsService.compareAndSave(userId, diagram.id, diagram.content, content);
+         await this.saveInteraction(userId, diagram.id, AIInteractionType.AGENT, payload.message || '[Image]', processedResponse.message);
+         return { ...processedResponse, content };
+       }
+       if (processedResponse.success) await this.saveInteraction(userId, diagram.id, AIInteractionType.ASK, payload.message || '[Image]', processedResponse.message);
 
-    if (mode === ChatAiMode.AGENT && !payload.attachments?.length && !payload.sourceText?.trim()) {
-      const result = parseDiagramCommands(payload.message, payload.diagramData as any);
-      if (result.success || containsDiagramCommand(payload.message)) {
-        await this.saveInteraction(userId, payload.diagramId || null, AIInteractionType.AGENT, payload.message, result.message);
-        return { success: result.success, message: result.message, mode: ChatAiMode.AGENT, actions: result.actions };
-      }
-    }
-
-    const systemPrompt = this.systemPrompts[mode] || this.systemPrompts.ask;
-    const context = this.buildContext(payload.diagramData, payload.conversationHistory || [], payload.sourceText || null, payload.attachments || []);
-    const userParts = this.buildUserParts(payload, context);
-
-    try {
-      const aiResponse = await this.callOpenAI(systemPrompt, userParts, mode);
-      const processedResponse = mode === ChatAiMode.AGENT
-        ? this.processAgentResponse(aiResponse, payload.diagramData)
-        : { message: aiResponse, mode: ChatAiMode.ASK, success: true };
-
-      if (processedResponse.success) await this.saveInteraction(userId, payload.diagramId || null, mode === ChatAiMode.AGENT ? AIInteractionType.AGENT : AIInteractionType.ASK, payload.message, processedResponse.message);
-
-      return processedResponse;
+       return processedResponse;
     } catch (error: any) {
       if (error instanceof HttpException) throw error;
 

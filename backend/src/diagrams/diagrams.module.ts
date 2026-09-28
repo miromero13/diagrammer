@@ -8,9 +8,10 @@ import { ProjectMemberEntity } from '../projects/entities/project-member.entity'
 import { UserEntity } from '../users/entities/user.entity';
 import { DiagramsController } from './diagrams.controller';
 import { DiagramsService } from './diagrams.service';
+import { CollaborationModule } from '../collaboration/collaboration.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DiagramEntity, DiagramVersionEntity, ProjectEntity, ProjectMemberEntity, UserEntity])],
+  imports: [TypeOrmModule.forFeature([DiagramEntity, DiagramVersionEntity, ProjectEntity, ProjectMemberEntity, UserEntity]), CollaborationModule],
   controllers: [DiagramsController],
   providers: [DiagramsService],
   exports: [DiagramsService],

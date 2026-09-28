@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -9,6 +9,7 @@ import { ProjectEntity } from '../projects/entities/project.entity';
 import { ProjectMemberEntity } from '../projects/entities/project-member.entity';
 import { CreateDiagramDto } from '../projects/dto/project.dto';
 import { UserEntity } from '../users/entities/user.entity';
+import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 
 @Injectable()
 export class DiagramsService {
@@ -18,6 +19,7 @@ export class DiagramsService {
     @InjectRepository(ProjectMemberEntity) private readonly memberRepository: Repository<ProjectMemberEntity>,
     @InjectRepository(DiagramVersionEntity) private readonly versionRepository: Repository<DiagramVersionEntity>,
     @InjectRepository(UserEntity) private readonly userRepository: Repository<UserEntity>,
+    private readonly collaborationGateway: CollaborationGateway,
   ) {}
 
   private async ensureAccess(diagramId: string, userId: string) {
@@ -32,6 +34,23 @@ export class DiagramsService {
     return { diagram, project };
   }
 
+  async getEditableDiagram(userId: string, id: string) {
+    const { diagram, project } = await this.ensureAccess(id, userId);
+    const role = project.projectMembers?.find((member) => member.userId === userId)?.role;
+    if (project.ownerId !== userId && !['admin', 'editor'].includes(role || '')) throw new NotFoundException('Sin permisos para editar diagrama');
+    return diagram;
+  }
+
+  async compareAndSave(userId: string, id: string, expected: unknown, content: Record<string, unknown>) {
+    await this.getEditableDiagram(userId, id);
+    if (!expected || typeof expected !== 'object' || Array.isArray(expected)) throw new ConflictException('Reload the diagram before editing');
+    const result = await this.diagramRepository.createQueryBuilder().update(DiagramEntity)
+      .set({ content }).where('id = :id AND is_active = true AND CAST(content AS jsonb) = CAST(:expected AS jsonb)', { id, expected: JSON.stringify(expected) }).execute();
+    if (result.affected !== 1) throw new ConflictException('Diagram changed. Reload and try again.');
+    this.collaborationGateway.publishDiagramContent(id, content);
+    return content;
+  }
+
   async getDiagram(userId: string, id: string) {
     const { diagram } = await this.ensureAccess(id, userId);
     return diagram;
@@ -42,11 +61,16 @@ export class DiagramsService {
     const isOwner = project.ownerId === userId;
     const role = project.projectMembers?.find((m) => m.userId === userId)?.role;
     if (!isOwner && !['admin', 'editor'].includes(role || '')) throw new NotFoundException('Sin permisos para editar diagrama');
-    await this.diagramRepository.update(diagram.id, {
-      name: body.name ?? diagram.name,
-      description: body.description ?? diagram.description,
-      content: body.content !== undefined ? (typeof body.content === 'string' ? JSON.parse(body.content) : body.content) : diagram.content,
-    });
+    if (body.content !== undefined) {
+      const content = typeof body.content === 'string' ? JSON.parse(body.content) : body.content;
+      await this.compareAndSave(userId, id, diagram.content, content);
+    }
+    if (body.name !== undefined || body.description !== undefined) {
+      await this.diagramRepository.update(diagram.id, {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+      });
+    }
     return this.diagramRepository.findOneBy({ id });
   }
 
@@ -97,9 +121,9 @@ export class DiagramsService {
     return this.versionRepository.findOne({ where: { id: saved.id }, relations: { createdBy: true } });
   }
 
-  async quickUpdate(userId: string, id: string, content: any) {
-    const { diagram } = await this.ensureAccess(id, userId);
-    await this.diagramRepository.update(diagram.id, { content: typeof content === 'string' ? JSON.parse(content) : content });
+  async quickUpdate(userId: string, id: string, content: any, expected: unknown) {
+    const next = typeof content === 'string' ? JSON.parse(content) : content;
+    await this.compareAndSave(userId, id, expected, next);
     return this.diagramRepository.findOneBy({ id });
   }
 }

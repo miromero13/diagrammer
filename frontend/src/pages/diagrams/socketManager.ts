@@ -30,6 +30,7 @@ type SocketEvent =
   | 'elementSelected'
   | 'elementDeselected'
   | 'serverError'
+  | 'diagramContentSaved'
 
 type Listener = (data?: any) => void
 
@@ -109,6 +110,7 @@ class SocketManager {
     this.socket.on('elementAdded', (data) => this.emit('elementAdded', data))
     this.socket.on('elementUpdated', (data) => this.emit('elementUpdated', data))
     this.socket.on('elementDeleted', (data) => this.emit('elementDeleted', data))
+    this.socket.on('diagramContentSaved', (data) => this.emit('diagramContentSaved', data))
     this.socket.on('elementLocked', (data) => this.emit('elementLocked', data))
     this.socket.on('elementUnlocked', (data) => this.emit('elementUnlocked', data))
     this.socket.on('elementLockSuccess', (data) => this.emit('elementLockSuccess', data))

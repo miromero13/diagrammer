@@ -285,6 +285,37 @@ export const equivalentDiagramContent = (left: DiagramContent, right: DiagramCon
     && stableJson(normalizedLeft.connections ?? []) === stableJson(normalizedRight.connections ?? [])
 }
 
+const mergeById = (base: Array<{ id?: string }>, proposed: Array<{ id?: string }>, latest: Array<{ id?: string }>) => {
+  const merged = new Map(latest.filter((item) => item.id).map((item) => [String(item.id), item]))
+  const baseById = new Map(base.filter((item) => item.id).map((item) => [String(item.id), item]))
+  const proposedById = new Map(proposed.filter((item) => item.id).map((item) => [String(item.id), item]))
+  baseById.forEach((item, id) => {
+    const next = proposedById.get(id)
+    if (!next) merged.delete(id)
+    else if (stableJson(item) !== stableJson(next)) merged.set(id, next)
+  })
+  proposedById.forEach((item, id) => { if (!baseById.has(id)) merged.set(id, item) })
+  return [...merged.values()]
+}
+
+export const mergeDiagramContent = (base: DiagramContent, local: DiagramContent, canonical: DiagramContent): DiagramContent => {
+  const merged: DiagramContent = { ...canonical }
+  merged.elements = mergeById(base.elements ?? [], local.elements ?? [], canonical.elements ?? []) as DiagramContent['elements']
+  merged.connections = mergeById(base.connections ?? [], local.connections ?? [], canonical.connections ?? []) as DiagramContent['connections']
+  const baseMetadata = base.metadata ?? {}
+  const localMetadata = local.metadata ?? {}
+  const metadata = { ...(canonical.metadata ?? {}) }
+  new Set([...Object.keys(baseMetadata), ...Object.keys(localMetadata)]).forEach((key) => {
+    if (stableJson(baseMetadata[key]) === stableJson(localMetadata[key])) return
+    if (Object.prototype.hasOwnProperty.call(localMetadata, key)) metadata[key] = localMetadata[key]
+    else delete metadata[key]
+  })
+  merged.metadata = metadata
+  return merged
+}
+
+export const isSaveResponseCurrent = (requestRevision: number, currentRevision: number) => requestRevision === currentRevision
+
 const kindToType = (kind: UmlKind) => (kind === 'interface' ? 'uml.Interface' : kind === 'enum' ? 'uml.Enumeration' : 'uml.Class')
 
 const typeToKind = (type?: string, name?: string, isAbstract?: boolean): UmlKind => {
@@ -514,6 +545,7 @@ const DiagramFlow = () => {
   const [remoteMotionByElement, setRemoteMotionByElement] = useState<Record<string, RemoteMotionState>>({})
   const saveTimerRef = useRef<number | null>(null)
   const savedContentRef = useRef<DiagramContent | null>(null)
+  const serverSnapshotRevisionRef = useRef(0)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   const skipSaveRef = useRef(false)
   const chatSendingRef = useRef(false)
@@ -903,19 +935,16 @@ const DiagramFlow = () => {
     const onDiagramContentSaved = (payload?: { diagramId: string; content: DiagramContent }) => {
       if (payload?.diagramId !== diagramId || !payload.content) return
       if (savedContentRef.current && equivalentDiagramContent(payload.content, savedContentRef.current)) return
+      const base = savedContentRef.current ?? emptyContent()
       const local = toContent(nodesRef.current, edgesRef.current)
-      if (chatSendingRef.current || !savedContentRef.current || equivalentDiagramContent(local, savedContentRef.current)) {
-        if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
-        skipSaveRef.current = true
-        savedContentRef.current = payload.content
-        nodesRef.current = toNodes(payload.content)
-        edgesRef.current = toEdges(payload.content)
-        setNodes(nodesRef.current)
-        setEdges(edgesRef.current)
-        setDiagram((current) => current ? { ...current, content: payload.content } : current)
-      } else {
-        setError('El diagrama cambió en otra sesión. Recargá antes de guardar tus cambios.')
-      }
+      const reconciled = mergeDiagramContent(base, local, payload.content)
+      serverSnapshotRevisionRef.current += 1
+      savedContentRef.current = payload.content
+      nodesRef.current = toNodes(reconciled)
+      edgesRef.current = toEdges(reconciled)
+      setNodes(nodesRef.current)
+      setEdges(edgesRef.current)
+      setDiagram((current) => current ? { ...current, content: payload.content } : current)
     }
 
     const subscriptions: Array<[Parameters<typeof socketManager.on>[0], (data?: any) => void]> = [
@@ -977,8 +1006,12 @@ const DiagramFlow = () => {
           if (chatSendingRef.current) return
           const content = toContent(nodes, edges)
           if (!savedContentRef.current) return
+          const serverSnapshotRevision = serverSnapshotRevisionRef.current
           const response = await diagramsService.quickUpdateDiagram(diagramId, content, savedContentRef.current)
-          savedContentRef.current = response.content
+          if (isSaveResponseCurrent(serverSnapshotRevision, serverSnapshotRevisionRef.current)) {
+            savedContentRef.current = response.content
+            setDiagram((current) => current ? { ...current, content: response.content } : current)
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : 'No se pudo guardar el diagrama')
         }

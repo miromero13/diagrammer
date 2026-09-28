@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 
 import { DiagramEntity } from './entities/diagram.entity';
@@ -41,14 +41,71 @@ export class DiagramsService {
     return diagram;
   }
 
+  private equalJson(left: unknown, right: unknown) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  private mergeById<T extends Record<string, any>>(baseValue: unknown, proposedValue: unknown, latestValue: unknown): T[] {
+    const base = Array.isArray(baseValue) ? baseValue : [];
+    const proposed = Array.isArray(proposedValue) ? proposedValue : [];
+    const latest = Array.isArray(latestValue) ? latestValue : [];
+    const baseById = new Map(base.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+    const proposedById = new Map(proposed.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+    const latestById = new Map(latest.filter((item) => item && item.id != null).map((item) => [String(item.id), item]));
+
+    for (const [id, oldItem] of baseById) {
+      const nextItem = proposedById.get(id);
+      if (!nextItem) latestById.delete(id);
+      else if (!this.equalJson(oldItem, nextItem)) latestById.set(id, nextItem);
+    }
+    for (const [id, nextItem] of proposedById) {
+      if (!baseById.has(id)) latestById.set(id, nextItem);
+    }
+    return [...latestById.values()] as T[];
+  }
+
+  private mergeContent(base: Record<string, any>, proposed: Record<string, any>, latest: Record<string, any>) {
+    const merged: Record<string, any> = { ...latest };
+    for (const key of new Set([...Object.keys(base), ...Object.keys(proposed)])) {
+      if (key === 'elements' || key === 'connections' || key === 'metadata') continue;
+      if (this.equalJson(base[key], proposed[key])) continue;
+      if (Object.prototype.hasOwnProperty.call(proposed, key)) merged[key] = proposed[key];
+      else delete merged[key];
+    }
+    merged.elements = this.mergeById(base.elements, proposed.elements, latest.elements);
+    merged.connections = this.mergeById(base.connections, proposed.connections, latest.connections);
+    const baseMetadata = base.metadata && typeof base.metadata === 'object' ? base.metadata : {};
+    const proposedMetadata = proposed.metadata && typeof proposed.metadata === 'object' ? proposed.metadata : {};
+    const latestMetadata = latest.metadata && typeof latest.metadata === 'object' ? latest.metadata : {};
+    const metadata = { ...latestMetadata };
+    for (const key of new Set([...Object.keys(baseMetadata), ...Object.keys(proposedMetadata)])) {
+      if (this.equalJson(baseMetadata[key], proposedMetadata[key])) continue;
+      if (Object.prototype.hasOwnProperty.call(proposedMetadata, key)) metadata[key] = proposedMetadata[key];
+      else delete metadata[key];
+    }
+    merged.metadata = metadata;
+    return merged;
+  }
+
   async compareAndSave(userId: string, id: string, expected: unknown, content: Record<string, unknown>) {
     await this.getEditableDiagram(userId, id);
-    if (!expected || typeof expected !== 'object' || Array.isArray(expected)) throw new ConflictException('Reload the diagram before editing');
-    const result = await this.diagramRepository.createQueryBuilder().update(DiagramEntity)
-      .set({ content }).where('id = :id AND is_active = true AND CAST(content AS jsonb) = CAST(:expected AS jsonb)', { id, expected: JSON.stringify(expected) }).execute();
-    if (result.affected !== 1) throw new ConflictException('Diagram changed. Reload and try again.');
-    this.collaborationGateway.publishDiagramContent(id, content);
-    return content;
+    if (!expected || typeof expected !== 'object' || Array.isArray(expected) || !content || typeof content !== 'object' || Array.isArray(content)) {
+      throw new ConflictException('Diagram content is invalid');
+    }
+    const base = expected as Record<string, any>;
+    const proposed = content as Record<string, any>;
+    const canonical = await this.diagramRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(DiagramEntity);
+      const latest = await repository.createQueryBuilder('diagram').setLock('pessimistic_write')
+        .where('diagram.id = :id AND diagram.isActive = true', { id }).getOne();
+      if (!latest) throw new NotFoundException('Diagrama no encontrado');
+      const merged = this.mergeContent(base, proposed, (latest.content ?? {}) as Record<string, any>);
+      const result = await repository.update({ id, isActive: true }, { content: merged });
+      if (result.affected !== 1) throw new ConflictException('Diagram changed. Reload and try again.');
+      return merged;
+    });
+    this.collaborationGateway.publishDiagramContent(id, canonical);
+    return canonical;
   }
 
   async getDiagram(userId: string, id: string) {

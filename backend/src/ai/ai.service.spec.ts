@@ -84,9 +84,10 @@ describe('AI editing of an open diagram', () => {
 });
 
 describe('durable diagram compare-and-save', () => {
-  const execute = jest.fn();
-  const query = { update: jest.fn(), set: jest.fn(), where: jest.fn(), execute };
-  const repository = { findOne: jest.fn(), createQueryBuilder: jest.fn(() => query) };
+  const lockedQuery = { setLock: jest.fn(), where: jest.fn(), getOne: jest.fn() };
+  const transactionalRepository = { createQueryBuilder: jest.fn(() => lockedQuery), update: jest.fn() };
+  const manager = { getRepository: jest.fn(() => transactionalRepository) };
+  const repository = { findOne: jest.fn(), manager: { transaction: jest.fn(async (work) => work(manager)) } };
   const projects = { findOne: jest.fn() };
   const broadcast = { publishDiagramContent: jest.fn() };
   const service = new DiagramsService(repository as any, projects as any, {} as any, {} as any, {} as any, broadcast as any);
@@ -94,26 +95,25 @@ describe('durable diagram compare-and-save', () => {
     jest.clearAllMocks();
     repository.findOne.mockResolvedValue({ id: 'current', projectId: 'project', isActive: true });
     projects.findOne.mockResolvedValue({ ownerId: 'owner', projectMembers: [{ userId: 'editor', role: 'editor' }, { userId: 'viewer', role: 'viewer' }] });
-    query.update.mockReturnValue(query);
-    query.set.mockReturnValue(query);
-    query.where.mockReturnValue(query);
-    execute.mockResolvedValue({ affected: 1 });
+    lockedQuery.setLock.mockReturnValue(lockedQuery);
+    lockedQuery.where.mockReturnValue(lockedQuery);
+    lockedQuery.getOne.mockResolvedValue({ id: 'current', projectId: 'project', isActive: true, content: { elements: [], connections: [], metadata: {} } });
+    transactionalRepository.update.mockResolvedValue({ affected: 1 });
   });
   it('requires editor rights for quick updates and AI commits', async () => {
     await expect(service.compareAndSave('viewer', 'current', { elements: [] }, { elements: [] })).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.quickUpdate('viewer', 'current', { elements: [] }, { elements: [] })).rejects.toBeInstanceOf(NotFoundException);
-    expect(execute).not.toHaveBeenCalled();
+    expect(repository.manager.transaction).not.toHaveBeenCalled();
   });
-  it('uses an atomic JSONB compare-and-save and broadcasts only after a durable write', async () => {
-    const expected = { elements: [] };
-    const next = { elements: [{ id: 'new' }] };
+  it('takes a pessimistic row lock and broadcasts only after persistence succeeds', async () => {
+    const expected = { elements: [], connections: [], metadata: {} };
+    const next = { elements: [{ id: 'new' }], connections: [], metadata: {} };
     await service.compareAndSave('editor', 'current', expected, next);
-    expect(query.where).toHaveBeenCalledWith(expect.stringContaining('content = CAST(:expected AS jsonb)'), { id: 'current', expected: JSON.stringify(expected) });
+    expect(lockedQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(transactionalRepository.update).toHaveBeenCalledWith({ id: 'current', isActive: true }, { content: next });
+    expect(transactionalRepository.update.mock.invocationCallOrder[0]).toBeLessThan(broadcast.publishDiagramContent.mock.invocationCallOrder[0]);
     expect(broadcast.publishDiagramContent).toHaveBeenCalledWith('current', next);
-    execute.mockResolvedValueOnce({ affected: 0 });
-    await expect(service.compareAndSave('owner', 'current', expected, next)).rejects.toBeInstanceOf(ConflictException);
-    expect(broadcast.publishDiagramContent).toHaveBeenCalledTimes(1);
-    execute.mockRejectedValueOnce(new Error('storage down'));
+    transactionalRepository.update.mockRejectedValueOnce(new Error('storage down'));
     await expect(service.compareAndSave('owner', 'current', expected, next)).rejects.toThrow('storage down');
     expect(broadcast.publishDiagramContent).toHaveBeenCalledTimes(1);
   });

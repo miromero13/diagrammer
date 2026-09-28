@@ -475,9 +475,9 @@ Responde siempre en español, de manera clara y educativa. Si no tienes informac
        const processedResponse = this.processAgentResponse(aiResponse, diagram.content);
        if (processedResponse.success && processedResponse.mode === ChatAiMode.AGENT) {
          const content = this.buildContentFromActions(diagram.content, processedResponse.actions);
-         await this.diagramsService.compareAndSave(userId, diagram.id, diagram.content, content);
+         const canonicalContent = await this.diagramsService.compareAndSave(userId, diagram.id, diagram.content, content);
          await this.saveInteraction(userId, diagram.id, AIInteractionType.AGENT, payload.message || '[Image]', processedResponse.message);
-         return { ...processedResponse, content };
+         return { ...processedResponse, content: canonicalContent };
        }
        if (processedResponse.success) await this.saveInteraction(userId, diagram.id, AIInteractionType.ASK, payload.message || '[Image]', processedResponse.message);
 

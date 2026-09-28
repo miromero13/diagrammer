@@ -45,39 +45,60 @@ class SocketManager {
   reconnectDelay = AppConfig.SOCKET_RECONNECT_DELAY
   pingInterval: number | null = null
   cursorThrottle = false
+  private connecting: Promise<boolean> | null = null
 
   async connect() {
+    if (this.isSocketConnected()) return true
+    if (this.connecting) return this.connecting
+    this.connecting = this.openConnection()
+    try {
+      return await this.connecting
+    } finally {
+      this.connecting = null
+    }
+  }
+
+  private async openConnection() {
     try {
       const token = window.localStorage.getItem(authStorage.accessTokenKey)
       if (!token) return false
 
+      this.socket?.disconnect()
       this.socket = io(AppConfig.SOCKET_URL, {
         auth: { token },
         transports: ['websocket', 'polling'],
-        reconnection: false,
+        reconnection: true,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: this.reconnectDelay,
       })
 
+      const socket = this.socket
       this.setupEventHandlers()
 
       return await new Promise<boolean>((resolve) => {
-        this.socket?.once('connect', () => {
+        const cleanup = () => {
+          socket.off('connect', onConnect)
+          socket.off('connect_error', onConnectError)
+        }
+        const onConnect = () => {
+          cleanup()
           this.isConnected = true
           this.reconnectAttempts = 0
           this.startPingInterval()
           this.emit('socketConnected')
           resolve(true)
-        })
-
-        this.socket?.once('connect_error', async (error: Error) => {
+        }
+        const onConnectError = (error: Error) => {
+          cleanup()
           this.isConnected = false
           this.emit('socketError', error)
-
-          if (error.message.includes('jwt expired') || error.message.includes('Token inválido')) {
-            await this.handleTokenExpired()
-          }
-
           resolve(false)
-        })
+          if (error.message.includes('jwt expired') || error.message.includes('Token inválido')) {
+            void this.handleTokenExpired()
+          }
+        }
+        socket.once('connect', onConnect)
+        socket.once('connect_error', onConnectError)
       })
     } catch {
       return false
@@ -87,20 +108,27 @@ class SocketManager {
   setupEventHandlers() {
     if (!this.socket) return
 
+    this.socket.on('connect', () => {
+      const reconnected = this.reconnectAttempts > 0 || !this.isConnected
+      this.isConnected = true
+      this.reconnectAttempts = 0
+      this.startPingInterval()
+      if (this.currentDiagramId) this.joinDiagram(this.currentDiagramId)
+      if (reconnected) this.emit('socketReconnected')
+    })
+
     this.socket.on('disconnect', (reason) => {
       this.isConnected = false
+      this.stopPingInterval()
       this.emit('socketDisconnected', reason)
       if (reason === 'io server disconnect') this.handleReconnection()
     })
 
-    this.socket.on('reconnect', () => {
-      this.isConnected = true
-      this.reconnectAttempts = 0
-      this.emit('socketReconnected')
-      if (this.currentDiagramId) this.joinDiagram(this.currentDiagramId)
+    this.socket.io?.on('reconnect_attempt', (attempt: number) => {
+      this.reconnectAttempts = attempt
     })
-
-    this.socket.on('reconnect_error', (error) => this.emit('socketReconnectError', error))
+    this.socket.io?.on('reconnect_error', (error: Error) => this.emit('socketReconnectError', error))
+    this.socket.io?.on('reconnect_failed', () => this.emit('socketReconnectFailed'))
     this.socket.on('userJoined', (data) => this.emit('userJoined', data))
     this.socket.on('userLeft', (data) => this.emit('userLeft', data))
     this.socket.on('usersUpdated', (users) => {

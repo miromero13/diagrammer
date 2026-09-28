@@ -27,7 +27,7 @@ export class DiagramEntity extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   description?: string | null;
 
-  @Column({ type: 'jsonb', default: { elements: [], connections: [], metadata: {} } })
+  @Column({ type: 'jsonb', default: () => "'{\"elements\":[],\"connections\":[],\"metadata\":{}}'::jsonb" })
   content: Record<string, unknown>;
 
   @Column({ type: 'boolean', name: 'is_active', default: true })

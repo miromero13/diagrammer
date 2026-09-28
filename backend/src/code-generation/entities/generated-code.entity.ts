@@ -33,10 +33,10 @@ export class GeneratedCodeEntity {
   @Column({ type: 'varchar', length: 100, name: 'backend_name' })
   backendName: string;
 
-  @Column({ type: 'jsonb', default: {} })
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   authentication: Record<string, unknown>;
 
-  @Column({ type: 'jsonb', default: [] })
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
   steps: Array<Record<string, string>>;
 
   @Column({ type: 'text', nullable: true })

@@ -31,7 +31,7 @@ export class ProjectEntity extends BaseEntity {
   @Column({ type: 'boolean', name: 'is_public', default: false })
   isPublic: boolean;
 
-  @Column({ type: 'jsonb', default: {} })
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   settings: Record<string, unknown>;
 
   @OneToMany(() => DiagramEntity, (diagram) => diagram.project, { cascade: true })
